@@ -1,6 +1,8 @@
 #include "openefb/core/application.hpp"
+#include "openefb/core/ui_model.hpp"
 #include "openefb/core/window_controller.hpp"
 #include "xplane_menu.hpp"
+#include "xplane_preferences.hpp"
 #include "xplane_window.hpp"
 
 #include <XPLMPlugin.h>
@@ -17,7 +19,7 @@ namespace {
 struct PluginRuntime {
     PluginRuntime()
         : application(xplane_log),
-          window_controller([] { return openefb::xplane::XPlaneWindow::create(); }),
+          window_controller([this] { return openefb::xplane::XPlaneWindow::create(ui_model, preferences); }),
           menu([this] { toggle_window(); }) {}
 
     static void xplane_log(std::string_view message) {
@@ -35,6 +37,8 @@ struct PluginRuntime {
     }
 
     openefb::Application application;
+    openefb::UiModel ui_model;
+    openefb::xplane::XPlanePreferences preferences;
     openefb::WindowController window_controller;
     openefb::xplane::XPlaneMenu menu;
 };

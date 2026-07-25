@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(OpenEFB VERSION 0.1.0 LANGUAGES CXX)
+project(OpenEFB VERSION 0.2.0 LANGUAGES CXX)
 
 option(OPEN_EFB_BUILD_TESTS "Build OpenEFB unit tests" ON)
 set(OPEN_EFB_XPLANE_SDK_PATH "" CACHE PATH "Path to the X-Plane SDK root")
@@ -11,6 +11,7 @@ endif()
 
 add_library(openefb_core STATIC
     src/core/application.cpp
+    src/core/ui_model.cpp
     src/core/window_controller.cpp
 )
 add_library(OpenEFB::core ALIAS openefb_core)
@@ -29,6 +30,7 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
     add_library(openefb_plugin MODULE
         src/xplane/plugin.cpp
         src/xplane/xplane_menu.cpp
+        src/xplane/xplane_preferences.cpp
         src/xplane/xplane_window.cpp
     )
     target_link_libraries(openefb_plugin PRIVATE OpenEFB::core)
@@ -37,6 +39,12 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
         "${OPEN_EFB_XPLANE_SDK_PATH}/CHeaders/Widgets"
     )
     target_compile_features(openefb_plugin PRIVATE cxx_std_20)
+
+    if(MSVC)
+        target_compile_options(openefb_plugin PRIVATE /W4 /permissive-)
+    else()
+        target_compile_options(openefb_plugin PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
 
     if(WIN32)
         set(OPEN_EFB_PLUGIN_NAME win)
@@ -48,15 +56,24 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
             "${OPEN_EFB_XPLANE_SDK_PATH}/Libraries/Win"
         )
         target_link_libraries(openefb_plugin PRIVATE XPLM_64)
+        target_link_libraries(openefb_plugin PRIVATE opengl32)
     elseif(APPLE)
         set(OPEN_EFB_PLUGIN_NAME mac)
-        target_compile_definitions(openefb_plugin PRIVATE APL=1 XPLM200=1 XPLM210=1 XPLM300=1 XPLM301=1 XPLM303=1)
+        target_compile_definitions(openefb_plugin PRIVATE
+            APL=1 XPLM200=1 XPLM210=1 XPLM300=1 XPLM301=1 XPLM303=1
+        )
         target_link_libraries(openefb_plugin PRIVATE
             "${OPEN_EFB_XPLANE_SDK_PATH}/Libraries/Mac/XPLM.framework"
         )
+        find_library(OPEN_EFB_OPENGL_FRAMEWORK OpenGL REQUIRED)
+        target_link_libraries(openefb_plugin PRIVATE "${OPEN_EFB_OPENGL_FRAMEWORK}")
     elseif(UNIX)
         set(OPEN_EFB_PLUGIN_NAME lin)
-        target_compile_definitions(openefb_plugin PRIVATE LIN=1 XPLM200=1 XPLM210=1 XPLM300=1 XPLM301=1 XPLM303=1)
+        target_compile_definitions(openefb_plugin PRIVATE
+            LIN=1 XPLM200=1 XPLM210=1 XPLM300=1 XPLM301=1 XPLM303=1
+        )
+        find_package(OpenGL REQUIRED)
+        target_link_libraries(openefb_plugin PRIVATE OpenGL::GL)
     else()
         message(FATAL_ERROR "Unsupported platform for the X-Plane plugin")
     endif()

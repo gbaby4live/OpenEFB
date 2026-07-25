@@ -26,3 +26,15 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
   unregisters during `XPluginStop`.
 - All XPLM creation, drawing, input, visibility, and destruction calls remain in
   the X-Plane adapter.
+
+## M2: UI foundation
+
+- `UiModel` owns navigation state and hit testing without depending on XPLM or
+  graphics APIs.
+- `XPlaneWindow` translates global desktop mouse coordinates to local EFB
+  coordinates, delegates navigation to `UiModel`, and renders the resulting
+  page from its XPLM window callback.
+- `XPlanePreferences` stores validated window bounds in the X-Plane preferences
+  directory. Geometry is restored when the EFB window is recreated.
+- OpenGL calls occur only during the documented XPLM window drawing callback;
+  application state changes remain outside rendering.

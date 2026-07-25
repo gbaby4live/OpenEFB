@@ -1,5 +1,7 @@
 #include "openefb/core/application.hpp"
+#include "openefb/core/ui_model.hpp"
 #include "openefb/core/window_controller.hpp"
+#include "openefb/core/window_geometry.hpp"
 
 #include <cstdlib>
 #include <iostream>
@@ -79,6 +81,25 @@ int main() {
 
     openefb::WindowController failing_controller([] { return std::unique_ptr<openefb::WindowSurface>{}; });
     require(!failing_controller.toggle(), "failed window creation is reported");
+
+    openefb::UiModel ui_model;
+    require(ui_model.active_page() == openefb::EfbPage::home, "UI starts on the home page");
+    require(ui_model.active_page_title() == "Home", "home page title is available");
+    constexpr int navigation_x = 30;
+    const int aircraft_y = openefb::navigation_top + openefb::navigation_item_height +
+                           openefb::navigation_item_gap + 10;
+    require(ui_model.select_at(navigation_x, aircraft_y), "aircraft navigation click is handled");
+    require(ui_model.active_page() == openefb::EfbPage::aircraft, "navigation changes the active page");
+    require(!ui_model.select_at(openefb::sidebar_width + 20, aircraft_y), "content clicks do not navigate");
+    require(ui_model.active_page() == openefb::EfbPage::aircraft, "ignored clicks preserve the active page");
+    ui_model.select_page(openefb::EfbPage::settings);
+    require(ui_model.active_page_title() == "Settings", "pages can be selected directly");
+
+    const openefb::WindowGeometry valid_geometry{100, 700, 960, 120};
+    const openefb::WindowGeometry invalid_geometry{100, 200, 300, 100};
+    require(valid_geometry.valid(), "normal window geometry is valid");
+    require(valid_geometry.width() == 860 && valid_geometry.height() == 580, "geometry reports its size");
+    require(!invalid_geometry.valid(), "undersized window geometry is rejected");
 
     std::cout << "OpenEFB core tests passed\n";
     return EXIT_SUCCESS;

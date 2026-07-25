@@ -39,7 +39,9 @@ After installing the built `OpenEFB` plugin package, open it from:
 For a local Windows build, copy the generated `build/OpenEFB` directory into
 `X-Plane 12/Resources/plugins` before starting the simulator.
 
-The M1 shell is a resizable, floating X-Plane window. Its window resource is
+The M2 shell provides a dark tablet layout with a live UTC status bar and four
+mouse-selectable pages: Home, Aircraft, Settings, and About. Window position and
+size are saved in X-Plane's preferences directory. Its window resource is
 created on first use and released whenever the plugin is disabled or stopped.
 
 See [docs/architecture.md](docs/architecture.md) for architectural boundaries
