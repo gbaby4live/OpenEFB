@@ -137,3 +137,18 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
 - Keyboard focus and mouse hit testing stay in the window adapter. Typing and
   Enter add identifiers, arrow keys or the wheel select rows, and dedicated
   controls reorder or remove the selected leg.
+
+## M10: airport information
+
+- `AirportInfoModel` owns a thread-safe snapshot because airport searches parse
+  installed scenery away from X-Plane's main thread.
+- The simulator-independent parser reads X-Plane 12 `apt.dat` airport blocks,
+  deriving runway lengths from geodesic endpoint coordinates and preferring
+  modern 8.33 kHz COM records over their legacy equivalents.
+- CIFP parsing lists unique procedure identifiers from SID, STAR, and APPCH
+  records without modifying X-Plane's navigation files.
+- `XPlaneAirportData` discovers airport files beneath the simulator root,
+  checks custom scenery before built-in Global Airports, and gives Custom Data
+  procedures priority over the default navdata cycle.
+- The Airports page displays loading, not-found, and error states explicitly;
+  filesystem work never runs inside an XPLM draw or input callback.

@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <ctime>
@@ -689,9 +690,106 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
               fuel.available ? format_fuel_flow(fuel) : "Waiting for live fuel data", text_primary);
 }
 
+std::string runway_detail(const AirportRunway& runway) {
+    char value[96]{};
+    std::snprintf(value, sizeof(value), "%s  |  %.0f x %.0f ft  |  %s",
+                  runway.identifiers.c_str(), runway.length_feet, runway.width_feet,
+                  runway.surface.c_str());
+    return value;
+}
+
+std::string frequency_detail(const AirportFrequency& frequency) {
+    char value[96]{};
+    std::snprintf(value, sizeof(value), "%s  %.3f  %s", frequency.type.c_str(),
+                  frequency.megahertz, frequency.name.c_str());
+    return value;
+}
+
+std::string procedure_list(std::string_view label, const std::vector<std::string>& values,
+                           std::size_t total_count) {
+    std::string result(label);
+    result += " (" + std::to_string(total_count) + "): ";
+    if (values.empty()) return result + "None in installed navdata";
+    for (const auto& value : values) {
+        if (result.size() + value.size() + 2 > 92) {
+            result += "...";
+            break;
+        }
+        if (result.back() != ' ') result += ", ";
+        result += value;
+    }
+    return result;
+}
+
+void draw_airports_page(std::string_view query, const AirportInfoSnapshot& airport,
+                        int left, int top, int right, int bottom) {
+    const int card_right = std::max(left + 420, right - 28);
+    draw_text(left, top, "Airport Information", text_primary, xplmFont_Basic);
+    draw_text(left, top - 27, "Runways, frequencies, and procedures from installed X-Plane data", text_muted);
+    draw_rectangle(left, top - 45, card_right - 86, top - 80, card);
+    draw_border(left, top - 45, card_right - 86, top - 80, map_grid, 1.0F);
+    const std::string entry = query.empty() ? "Type airport identifier..." : std::string(query) + "_";
+    draw_text(left + 12, top - 68, entry, query.empty() ? text_muted : text_primary);
+    draw_button(card_right - 78, top - 45, card_right, top - 80, "Search", true);
+
+    if (airport.state == AirportLookupState::idle) {
+        draw_card(left, top - 98, card_right, top - 184,
+                  "Search an airport", "Examples: KSEA, KPDX, EGLL, YSSY");
+        return;
+    }
+    if (airport.state == AirportLookupState::loading) {
+        draw_card(left, top - 98, card_right, top - 184,
+                  "Searching " + airport.identifier, airport.message);
+        return;
+    }
+    if (airport.state != AirportLookupState::ready) {
+        draw_card(left, top - 98, card_right, top - 184,
+                  airport.identifier.empty() ? "Airport unavailable" : airport.identifier,
+                  airport.message);
+        return;
+    }
+
+    char airport_summary[128]{};
+    std::snprintf(airport_summary, sizeof(airport_summary), "%s  |  Elevation %d ft  |  %zu runways",
+                  airport.name.c_str(), airport.elevation_feet, airport.runways.size());
+    draw_text(left, top - 105, airport.identifier, accent, xplmFont_Basic);
+    draw_text(left + 70, top - 105, airport_summary, text_primary);
+
+    const int gap = 12;
+    const int middle = (left + card_right) / 2;
+    const int runway_right = middle - gap / 2;
+    const int frequency_left = middle + gap / 2;
+    draw_text(left, top - 137, "RUNWAYS", accent);
+    draw_text(frequency_left, top - 137, "FREQUENCIES", accent);
+    int row_y = top - 163;
+    for (std::size_t index = 0; index < std::min<std::size_t>(4, airport.runways.size()); ++index) {
+        draw_text(left, row_y, runway_detail(airport.runways[index]), text_primary);
+        row_y -= 25;
+    }
+    if (airport.runways.empty()) draw_text(left, row_y, "No land runways listed", text_muted);
+    row_y = top - 163;
+    for (std::size_t index = 0; index < std::min<std::size_t>(5, airport.frequencies.size()); ++index) {
+        draw_text(frequency_left, row_y, frequency_detail(airport.frequencies[index]), text_primary);
+        row_y -= 25;
+    }
+    if (airport.frequencies.empty()) draw_text(frequency_left, row_y, "No COM frequencies listed", text_muted);
+    draw_line(left, top - 267, card_right, top - 267, map_grid);
+    draw_text(left, top - 294, "PROCEDURES", accent);
+    draw_text(left, top - 321, procedure_list("SIDs", airport.procedures.departures,
+                                              airport.procedures.departure_count), text_primary);
+    draw_text(left, top - 348, procedure_list("STARs", airport.procedures.arrivals,
+                                              airport.procedures.arrival_count), text_primary);
+    draw_text(left, top - 375, procedure_list("Approaches", airport.procedures.approaches,
+                                              airport.procedures.approach_count), text_primary);
+    draw_text(left, bottom + 42, airport.message, text_muted);
+    static_cast<void>(runway_right);
+}
+
 void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                        const FlightPlanSnapshot& flight_plan,
                        const FlightPlanEditor& flight_plan_editor,
+                       std::string_view airport_query,
+                       const AirportInfoSnapshot& airport_info,
                        const FuelSnapshot& fuel,
                        const RouteProgressSnapshot& route_progress,
                        const WeatherSnapshot& weather,
@@ -706,6 +804,9 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         break;
     case EfbPage::flight_plan:
         draw_flight_plan_page(flight_plan, flight_plan_editor, left, top, right, bottom);
+        break;
+    case EfbPage::airports:
+        draw_airports_page(airport_query, airport_info, left, top, right, bottom);
         break;
     case EfbPage::progress:
         draw_progress_page(route_progress, left, top, right);
@@ -739,13 +840,13 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         draw_text(left, top, "About OpenEFB", text_primary, xplmFont_Basic);
         draw_text(left, top - 28, "An open-source electronic flight bag for X-Plane 12.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Version", "0.9.0 - M9 flight-plan builder");
+                  "Version", "0.10.0 - M10 airport information");
         draw_card(left, top - 178, card_right, top - 274,
                   "Project", "Built in the open for the flight-sim community");
         break;
     }
 
-    draw_text(left, bottom + 22, "OPEN EFB  /  M9", text_muted);
+    draw_text(left, bottom + 22, "OPEN EFB  /  M10", text_muted);
 }
 
 } // namespace
@@ -754,6 +855,8 @@ std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, Telemetry
                                                     FlightPlanModel& flight_plan_model,
                                                     FlightPlanEditor& flight_plan_editor,
                                                     XPlaneFlightPlan& xplane_flight_plan,
+                                                    AirportInfoModel& airport_info_model,
+                                                    XPlaneAirportData& xplane_airport_data,
                                                     FuelModel& fuel_model,
                                                     MovingMapModel& moving_map_model,
                                                     RouteProgressModel& route_progress_model,
@@ -761,7 +864,8 @@ std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, Telemetry
                                                     XPlanePreferences& preferences) {
     auto window = std::unique_ptr<XPlaneWindow>(
         new XPlaneWindow(ui_model, telemetry_model, flight_plan_model, flight_plan_editor,
-                         xplane_flight_plan, fuel_model, moving_map_model,
+                         xplane_flight_plan, airport_info_model, xplane_airport_data,
+                         fuel_model, moving_map_model,
                          route_progress_model,
                          weather_model, preferences));
     if (!window->window_id_) {
@@ -774,6 +878,8 @@ XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
                            FlightPlanModel& flight_plan_model,
                            FlightPlanEditor& flight_plan_editor,
                            XPlaneFlightPlan& xplane_flight_plan,
+                           AirportInfoModel& airport_info_model,
+                           XPlaneAirportData& xplane_airport_data,
                            FuelModel& fuel_model,
                            MovingMapModel& moving_map_model,
                            RouteProgressModel& route_progress_model,
@@ -781,7 +887,8 @@ XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
                            XPlanePreferences& preferences)
     : ui_model_(ui_model), telemetry_model_(telemetry_model),
       flight_plan_model_(flight_plan_model), flight_plan_editor_(flight_plan_editor),
-      xplane_flight_plan_(xplane_flight_plan), fuel_model_(fuel_model),
+      xplane_flight_plan_(xplane_flight_plan), airport_info_model_(airport_info_model),
+      xplane_airport_data_(xplane_airport_data), fuel_model_(fuel_model),
       moving_map_model_(moving_map_model),
       route_progress_model_(route_progress_model),
       weather_model_(weather_model),
@@ -889,6 +996,7 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
     const int content_top = top - status_bar_height - 38;
     draw_page_content(ui_model_.active_page(), telemetry, flight_plan_model_.snapshot(),
                       flight_plan_editor_,
+                      airport_query_, airport_info_model_.snapshot(),
                       fuel_model_.snapshot(), route_progress_model_.snapshot(),
                       weather_model_.snapshot(), moving_map_model_,
                       map_tiles_,
@@ -1005,6 +1113,29 @@ void XPlaneWindow::handle_editor_key(char key, char virtual_key) {
     }
 }
 
+void XPlaneWindow::search_airport() {
+    if (!airport_query_.empty()) {
+        xplane_airport_data_.search(airport_query_);
+    }
+}
+
+void XPlaneWindow::handle_airport_key(char key, char virtual_key) {
+    switch (static_cast<unsigned char>(virtual_key)) {
+    case XPLM_VK_BACK:
+        if (!airport_query_.empty()) airport_query_.pop_back();
+        return;
+    case XPLM_VK_RETURN:
+        search_airport();
+        return;
+    default:
+        break;
+    }
+    const auto character = static_cast<unsigned char>(key);
+    if (airport_query_.size() < 7 && std::isalnum(character)) {
+        airport_query_.push_back(static_cast<char>(std::toupper(character)));
+    }
+}
+
 void XPlaneWindow::draw(XPLMWindowID window_id, void* refcon) {
     if (auto* window = static_cast<XPlaneWindow*>(refcon)) {
         window->render(window_id);
@@ -1022,6 +1153,17 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
     int right{};
     int bottom{};
     XPLMGetWindowGeometry(window_id, &left, &top, &right, &bottom);
+    if (window->ui_model_.active_page() == EfbPage::airports) {
+        const int content_left = left + sidebar_width + 30;
+        const int content_top = top - status_bar_height - 38;
+        const int card_right = std::max(content_left + 420, right - 28);
+        if (x >= content_left && x <= card_right &&
+            y <= content_top - 45 && y >= content_top - 80) {
+            XPLMTakeKeyboardFocus(window_id);
+            if (x >= card_right - 78) window->search_airport();
+            return 1;
+        }
+    }
     if (window->ui_model_.active_page() == EfbPage::flight_plan) {
         const int content_left = left + sidebar_width + 30;
         const int content_top = top - status_bar_height - 38;
@@ -1117,9 +1259,11 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
 void XPlaneWindow::handle_key(XPLMWindowID, char key, XPLMKeyFlags flags, char virtual_key,
                               void* refcon, int losing_focus) {
     auto* window = static_cast<XPlaneWindow*>(refcon);
-    if (window && !losing_focus && (flags & xplm_DownFlag) != 0 &&
-        window->ui_model_.active_page() == EfbPage::flight_plan) {
+    if (!window || losing_focus || (flags & xplm_DownFlag) == 0) return;
+    if (window->ui_model_.active_page() == EfbPage::flight_plan) {
         window->handle_editor_key(key, virtual_key);
+    } else if (window->ui_model_.active_page() == EfbPage::airports) {
+        window->handle_airport_key(key, virtual_key);
     }
 }
 

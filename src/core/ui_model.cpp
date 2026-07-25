@@ -2,10 +2,11 @@
 
 namespace openefb {
 
-const std::array<NavigationItem, 8>& navigation_items() noexcept {
+const std::array<NavigationItem, 9>& navigation_items() noexcept {
     static constexpr std::array items{
         NavigationItem{EfbPage::home, "Home"},
         NavigationItem{EfbPage::flight_plan, "Flight Plan"},
+        NavigationItem{EfbPage::airports, "Airports"},
         NavigationItem{EfbPage::progress, "Progress"},
         NavigationItem{EfbPage::weather, "Weather"},
         NavigationItem{EfbPage::fuel, "Fuel"},

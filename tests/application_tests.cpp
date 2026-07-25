@@ -1,4 +1,5 @@
 #include "openefb/core/application.hpp"
+#include "openefb/core/airport_info.hpp"
 #include "openefb/core/flight_plan_model.hpp"
 #include "openefb/core/flight_plan_editor.hpp"
 #include "openefb/core/fuel_model.hpp"
@@ -14,6 +15,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -94,7 +96,7 @@ int main() {
     require(ui_model.active_page() == openefb::EfbPage::home, "UI starts on the home page");
     require(ui_model.active_page_title() == "Home", "home page title is available");
     constexpr int navigation_x = 30;
-    const int aircraft_y = openefb::navigation_top + 5 * (openefb::navigation_item_height +
+    const int aircraft_y = openefb::navigation_top + 6 * (openefb::navigation_item_height +
                            openefb::navigation_item_gap) + 10;
     require(ui_model.select_at(navigation_x, aircraft_y), "aircraft navigation click is handled");
     require(ui_model.active_page() == openefb::EfbPage::aircraft, "navigation changes the active page");
@@ -205,6 +207,39 @@ int main() {
                 endpoint_editor.legs()[1].identifier == "BTG" &&
                 endpoint_editor.legs().back().identifier == "KPDX",
             "enroute additions stay before the assigned destination");
+
+    std::istringstream airport_data{
+        "I\n1200 Version\n"
+        "1 433 0 0 KSEA Seattle Tacoma International\n"
+        "100 45.72 1 0 0.25 1 2 1 16L 47.464000 -122.311000 0 0 3 8 1 1 "
+        "34R 47.431000 -122.309000 0 0 3 8 1 1\n"
+        "54 11990 Tower Legacy\n"
+        "1054 119900 Seattle Tower\n"
+        "1 31 0 0 KBFI Boeing Field\n99\n"};
+    auto parsed_airport = openefb::parse_airport_apt(airport_data, "ksea");
+    require(parsed_airport && parsed_airport->identifier == "KSEA" &&
+                parsed_airport->name == "Seattle Tacoma International" &&
+                parsed_airport->elevation_feet == 433,
+            "apt.dat parser finds airport headers case-insensitively");
+    require(parsed_airport->runways.size() == 1 &&
+                parsed_airport->runways[0].identifiers == "16L / 34R" &&
+                parsed_airport->runways[0].length_feet > 11000.0,
+            "apt.dat parser derives runway dimensions from endpoints");
+    require(parsed_airport->frequencies.size() == 1 &&
+                std::abs(parsed_airport->frequencies[0].megahertz - 119.9) < 0.001,
+            "modern 8.33 kHz frequencies supersede legacy airport frequencies");
+    std::istringstream procedure_data{
+        "SID:010,1,SEA6,RW16L,FIX1;\n"
+        "SID:020,1,SEA6,RW16L,FIX2;\n"
+        "STAR:010,2,OLM4,ALL,FIX3;\n"
+        "APPCH:010,A,I16L,,FIX4;\n"};
+    openefb::parse_airport_procedures(procedure_data, *parsed_airport);
+    require(parsed_airport->procedures.departures.size() == 1 &&
+                parsed_airport->procedures.departure_count == 1 &&
+                parsed_airport->procedures.departures[0] == "SEA6" &&
+                parsed_airport->procedures.arrivals[0] == "OLM4" &&
+                parsed_airport->procedures.approaches[0] == "I16L",
+            "CIFP parser lists unique SIDs, STARs, and approaches");
 
     openefb::WeatherModel weather_model;
     require(!weather_model.snapshot().available, "weather starts unavailable");

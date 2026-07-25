@@ -39,9 +39,9 @@ After installing the built `OpenEFB` plugin package, open it from:
 For a local Windows build, copy the generated `build/OpenEFB` directory into
 `X-Plane 12/Resources/plugins` before starting the simulator.
 
-The M9 shell provides a dark tablet layout with a live UTC status bar and eight
-mouse-selectable pages: Home, Flight Plan, Progress, Weather, Fuel, Aircraft,
-Settings, and About. Window position and size are saved in X-Plane's
+The M10 shell provides a dark tablet layout with a live UTC status bar and nine
+mouse-selectable pages: Home, Flight Plan, Airports, Progress, Weather, Fuel,
+Aircraft, Settings, and About. Window position and size are saved in X-Plane's
 preferences directory. Home and Aircraft display
 live aircraft identity, position, altitude, ground speed, heading, and vertical
 speed sampled from X-Plane at 5 Hz. High-contrast text and an enforced minimum
@@ -76,6 +76,12 @@ draft legs with the mouse, arrow keys, or mouse wheel; use Up, Down, and Remove
 to arrange the enroute portion. Changes remain isolated from X-Plane until
 Apply is selected. OpenEFB validates all identifiers first and refuses to
 overwrite the FMS if its live route changed after the draft was opened.
+
+Airports provides offline lookup against the scenery and navigation data
+installed with X-Plane. Search by airport identifier to see field elevation,
+runway identifiers, calculated runway dimensions, surfaces, communication
+frequencies, and the installed SID, STAR, and approach names. Searches run in
+the background so scanning large scenery files does not pause the simulator.
 
 See [docs/architecture.md](docs/architecture.md) for architectural boundaries
 and threading invariants, and [docs/product-roadmap.md](docs/product-roadmap.md)

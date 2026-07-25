@@ -16,10 +16,11 @@ original open-source code and visuals.
   route overlay, and zoom
 - M9: interactive flight-plan creation and editing with X-Plane waypoint
   lookup, add/remove/reorder controls, draft safety, and explicit FMS Apply
+- M10: offline airport browsing with runways, surfaces, COM frequencies, and
+  installed SID, STAR, and approach names
 
 ## Planned operational workflow
 
-- M10: airport, runway, frequency, and procedure browsing
 - M11: operational map overlays for weather, airports, navaids, and airspace
 - M12: aircraft-aware weight and balance, fuel planning, and performance tools
 - M13: charts, aircraft documents, checklists, notes, and flight briefing
