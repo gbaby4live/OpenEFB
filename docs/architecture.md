@@ -50,3 +50,14 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
   callback can outlive its owning runtime.
 - Rendering reads the latest snapshot but never performs dataref access or
   changes application state.
+
+## M4: active flight plan
+
+- `FlightPlanModel` owns a normalized, read-only view of the FMS route and marks
+  the leg X-Plane is currently flying toward.
+- `XPlaneFlightPlan` samples the documented FMS entry API once per second and
+  caps input at X-Plane's 100-entry route limit.
+- Flight-plan sampling has its own after-flight-model callback so motion data
+  can remain responsive without repeatedly scanning the route.
+- The Flight Plan page shows route endpoints and a window around the active leg;
+  OpenEFB does not modify or program the simulator FMS.

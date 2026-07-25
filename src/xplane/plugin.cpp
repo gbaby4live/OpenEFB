@@ -1,7 +1,9 @@
 #include "openefb/core/application.hpp"
+#include "openefb/core/flight_plan_model.hpp"
 #include "openefb/core/ui_model.hpp"
 #include "openefb/core/telemetry_model.hpp"
 #include "openefb/core/window_controller.hpp"
+#include "xplane_flight_plan.hpp"
 #include "xplane_menu.hpp"
 #include "xplane_preferences.hpp"
 #include "xplane_telemetry.hpp"
@@ -22,9 +24,15 @@ namespace {
 struct PluginRuntime {
     PluginRuntime()
         : application(xplane_log),
+          ui_model(),
+          telemetry_model(),
+          flight_plan_model(),
+          preferences(),
           telemetry(telemetry_model),
+          flight_plan(flight_plan_model),
           window_controller([this] {
-              return openefb::xplane::XPlaneWindow::create(ui_model, telemetry_model, preferences);
+              return openefb::xplane::XPlaneWindow::create(
+                  ui_model, telemetry_model, flight_plan_model, preferences);
           }),
           menu([this] { toggle_window(); }) {}
 
@@ -45,8 +53,10 @@ struct PluginRuntime {
     openefb::Application application;
     openefb::UiModel ui_model;
     openefb::TelemetryModel telemetry_model;
+    openefb::FlightPlanModel flight_plan_model;
     openefb::xplane::XPlanePreferences preferences;
     openefb::xplane::XPlaneTelemetry telemetry;
+    openefb::xplane::XPlaneFlightPlan flight_plan;
     openefb::WindowController window_controller;
     openefb::xplane::XPlaneMenu menu;
 };
@@ -83,6 +93,7 @@ PLUGIN_API int XPluginStart(char* out_name, char* out_signature, char* out_descr
 PLUGIN_API void XPluginStop() {
     if (runtime) {
         runtime->telemetry.stop();
+        runtime->flight_plan.stop();
         runtime->window_controller.reset();
         runtime->application.stop();
         runtime.reset();
@@ -96,12 +107,16 @@ PLUGIN_API int XPluginEnable() {
     if (!runtime->telemetry.start()) {
         PluginRuntime::xplane_log("telemetry datarefs unavailable");
     }
+    if (!runtime->flight_plan.start()) {
+        PluginRuntime::xplane_log("flight plan unavailable");
+    }
     return 1;
 }
 
 PLUGIN_API void XPluginDisable() {
     if (runtime) {
         runtime->telemetry.stop();
+        runtime->flight_plan.stop();
         runtime->window_controller.reset();
         runtime->application.disable();
     }

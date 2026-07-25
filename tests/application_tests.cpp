@@ -1,4 +1,5 @@
 #include "openefb/core/application.hpp"
+#include "openefb/core/flight_plan_model.hpp"
 #include "openefb/core/telemetry_model.hpp"
 #include "openefb/core/ui_model.hpp"
 #include "openefb/core/window_controller.hpp"
@@ -87,8 +88,8 @@ int main() {
     require(ui_model.active_page() == openefb::EfbPage::home, "UI starts on the home page");
     require(ui_model.active_page_title() == "Home", "home page title is available");
     constexpr int navigation_x = 30;
-    const int aircraft_y = openefb::navigation_top + openefb::navigation_item_height +
-                           openefb::navigation_item_gap + 10;
+    const int aircraft_y = openefb::navigation_top + 2 * (openefb::navigation_item_height +
+                           openefb::navigation_item_gap) + 10;
     require(ui_model.select_at(navigation_x, aircraft_y), "aircraft navigation click is handled");
     require(ui_model.active_page() == openefb::EfbPage::aircraft, "navigation changes the active page");
     require(!ui_model.select_at(openefb::sidebar_width + 20, aircraft_y), "content clicks do not navigate");
@@ -123,6 +124,25 @@ int main() {
     require(telemetry_model.snapshot().aircraft_name == "Cessna 172 SP", "aircraft identity is retained");
     telemetry_model.mark_unavailable();
     require(!telemetry_model.snapshot().available, "telemetry can be marked unavailable");
+
+    openefb::FlightPlanModel flight_plan_model;
+    require(!flight_plan_model.snapshot().available, "flight plan starts unavailable");
+    openefb::FlightPlanSnapshot flight_plan;
+    flight_plan.active_leg_index = 1;
+    flight_plan.legs.push_back({0, "KSEA", openefb::WaypointKind::airport, 0, 47.449, -122.309, false});
+    flight_plan.legs.push_back({1, "", openefb::WaypointKind::fix, 5000, 47.6, -122.0, false});
+    flight_plan.legs.push_back({2, "KPDX", openefb::WaypointKind::airport, 0, 45.589, -122.597, false});
+    flight_plan_model.update(flight_plan);
+    require(flight_plan_model.snapshot().available, "flight plan update marks the service available");
+    require(flight_plan_model.snapshot().legs[1].active, "active FMS leg is identified");
+    require(flight_plan_model.snapshot().legs[1].identifier == "WPT 2", "unnamed legs receive a label");
+    require(flight_plan_model.snapshot().revision == 1, "flight plan updates have revisions");
+    flight_plan.active_leg_index = 99;
+    flight_plan_model.update(flight_plan);
+    require(flight_plan_model.snapshot().active_leg_index == -1,
+            "out-of-range active legs are safely cleared");
+    flight_plan_model.mark_unavailable();
+    require(!flight_plan_model.snapshot().available, "flight plan can be marked unavailable");
 
     std::cout << "OpenEFB core tests passed\n";
     return EXIT_SUCCESS;

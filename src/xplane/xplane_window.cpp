@@ -113,7 +113,72 @@ std::string format_motion(const TelemetrySnapshot& telemetry) {
     return value;
 }
 
+std::string format_leg_detail(const FlightPlanLeg& leg) {
+    char value[112]{};
+    if (leg.altitude_feet != 0) {
+        std::snprintf(value, sizeof(value), "%d ft  |  %.4f, %.4f",
+                      leg.altitude_feet, leg.latitude_degrees, leg.longitude_degrees);
+    } else {
+        std::snprintf(value, sizeof(value), "%.4f, %.4f",
+                      leg.latitude_degrees, leg.longitude_degrees);
+    }
+    return value;
+}
+
+void draw_flight_plan_page(const FlightPlanSnapshot& flight_plan,
+                           int left, int top, int right) {
+    const int card_right = std::max(left + 260, right - 28);
+    draw_text(left, top, "Flight Plan", text_primary, xplmFont_Basic);
+
+    if (!flight_plan.available) {
+        draw_text(left, top - 28, "Waiting for X-Plane FMS data...", text_muted);
+        draw_card(left, top - 62, card_right, top - 158,
+                  "Route status", "Flight-plan service is starting");
+        return;
+    }
+    if (flight_plan.legs.empty()) {
+        draw_text(left, top - 28, "No active route is loaded.", text_muted);
+        draw_card(left, top - 62, card_right, top - 158,
+                  "X-Plane FMS", "Load or enter a flight plan to see it here");
+        return;
+    }
+
+    const auto& first = flight_plan.legs.front();
+    const auto& last = flight_plan.legs.back();
+    char summary[128]{};
+    std::snprintf(summary, sizeof(summary), "%s to %s  |  %zu legs  |  Active %d",
+                  first.identifier.c_str(), last.identifier.c_str(), flight_plan.legs.size(),
+                  flight_plan.active_leg_index >= 0 ? flight_plan.active_leg_index + 1 : 0);
+    draw_text(left, top - 28, summary, text_muted);
+
+    const int active = std::clamp(flight_plan.active_leg_index, 0,
+                                  static_cast<int>(flight_plan.legs.size()) - 1);
+    const std::size_t start = active > 1 ? static_cast<std::size_t>(active - 1) : 0U;
+    const std::size_t visible_count = std::min<std::size_t>(5, flight_plan.legs.size() - start);
+    constexpr int row_height = 48;
+    constexpr int row_gap = 6;
+    int row_top = top - 58;
+    for (std::size_t offset = 0; offset < visible_count; ++offset) {
+        const auto& leg = flight_plan.legs[start + offset];
+        draw_rectangle(left, row_top, card_right, row_top - row_height,
+                       leg.active ? active_navigation : card);
+        std::string label = (leg.active ? ">  " : "   ") + std::to_string(leg.index + 1) + "  " + leg.identifier;
+        if (label.size() > 22) {
+            label.resize(22);
+        }
+        draw_text(left + 14, row_top - 29, label, leg.active ? accent : text_primary);
+        draw_text(left + 190, row_top - 29, format_leg_detail(leg), text_muted);
+        row_top -= row_height + row_gap;
+    }
+
+    const std::size_t remaining = flight_plan.legs.size() - start - visible_count;
+    if (remaining > 0) {
+        draw_text(left + 14, row_top - 12, "+ " + std::to_string(remaining) + " more legs", text_muted);
+    }
+}
+
 void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
+                       const FlightPlanSnapshot& flight_plan,
                        int left, int top, int right, int bottom) {
     const int card_right = std::max(left + 260, right - 28);
     switch (page) {
@@ -127,6 +192,9 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                   "Position", format_position(telemetry));
         draw_card(left, top - 294, card_right, top - 390,
                   "Motion", format_motion(telemetry));
+        break;
+    case EfbPage::flight_plan:
+        draw_flight_plan_page(flight_plan, left, top, right);
         break;
     case EfbPage::aircraft:
         draw_text(left, top, "Aircraft", text_primary, xplmFont_Basic);
@@ -151,7 +219,7 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         draw_text(left, top, "About OpenEFB", text_primary, xplmFont_Basic);
         draw_text(left, top - 28, "An open-source electronic flight bag for X-Plane 12.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Version", "0.3.0 - M3 live telemetry");
+                  "Version", "0.4.0 - M4 flight plan");
         draw_card(left, top - 178, card_right, top - 274,
                   "Project", "Built in the open for the flight-sim community");
         break;
@@ -163,8 +231,10 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
 } // namespace
 
 std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, TelemetryModel& telemetry_model,
+                                                    FlightPlanModel& flight_plan_model,
                                                     XPlanePreferences& preferences) {
-    auto window = std::unique_ptr<XPlaneWindow>(new XPlaneWindow(ui_model, telemetry_model, preferences));
+    auto window = std::unique_ptr<XPlaneWindow>(
+        new XPlaneWindow(ui_model, telemetry_model, flight_plan_model, preferences));
     if (!window->window_id_) {
         return nullptr;
     }
@@ -172,8 +242,10 @@ std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, Telemetry
 }
 
 XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
+                           FlightPlanModel& flight_plan_model,
                            XPlanePreferences& preferences)
-    : ui_model_(ui_model), telemetry_model_(telemetry_model), preferences_(preferences) {
+    : ui_model_(ui_model), telemetry_model_(telemetry_model),
+      flight_plan_model_(flight_plan_model), preferences_(preferences) {
     WindowGeometry geometry;
     if (const auto stored = preferences_.load_geometry()) {
         geometry = *stored;
@@ -275,7 +347,8 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
 
     const int content_left = left + sidebar_width + 30;
     const int content_top = top - status_bar_height - 38;
-    draw_page_content(ui_model_.active_page(), telemetry, content_left, content_top, right, bottom);
+    draw_page_content(ui_model_.active_page(), telemetry, flight_plan_model_.snapshot(),
+                      content_left, content_top, right, bottom);
 }
 
 void XPlaneWindow::save_geometry() const {
