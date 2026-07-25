@@ -2,10 +2,12 @@
 
 #include "openefb/core/flight_plan_model.hpp"
 #include "openefb/core/airspace_model.hpp"
+#include "openefb/core/briefing_model.hpp"
 #include "openefb/core/flight_plan_editor.hpp"
 #include "openefb/core/airport_info.hpp"
 #include "openefb/core/fuel_model.hpp"
 #include "openefb/core/moving_map_model.hpp"
+#include "openefb/core/navigation_database_model.hpp"
 #include "openefb/core/planning_model.hpp"
 #include "openefb/core/route_progress_model.hpp"
 #include "openefb/core/ui_model.hpp"
@@ -14,15 +16,25 @@
 #include "openefb/core/weather_model.hpp"
 #include "xplane_preferences.hpp"
 #include "xplane_map_tiles.hpp"
+#include "xplane_pdf_viewer.hpp"
 #include "xplane_flight_plan.hpp"
 #include "xplane_airport_data.hpp"
+#include "xplane_briefing_library.hpp"
 
 #include <XPLMDisplay.h>
 
 #include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace openefb::xplane {
+
+struct MapHitTarget {
+    int x{};
+    int y{};
+    FlightPlanLeg leg;
+};
 
 class XPlaneWindow final : public WindowSurface {
 public:
@@ -35,7 +47,10 @@ public:
                                                  AirspaceModel& airspace_model,
                                                  FuelModel& fuel_model,
                                                  PlanningModel& planning_model,
+                                                 BriefingModel& briefing_model,
+                                                 XPlaneBriefingLibrary& briefing_library,
                                                  MovingMapModel& moving_map_model,
+                                                 NavigationDatabaseModel& navigation_database_model,
                                                  RouteProgressModel& route_progress_model,
                                                  WeatherModel& weather_model,
                                                  XPlanePreferences& preferences);
@@ -64,7 +79,10 @@ private:
                  AirspaceModel& airspace_model,
                  FuelModel& fuel_model,
                  PlanningModel& planning_model,
+                 BriefingModel& briefing_model,
+                 XPlaneBriefingLibrary& briefing_library,
                  MovingMapModel& moving_map_model,
+                 NavigationDatabaseModel& navigation_database_model,
                  RouteProgressModel& route_progress_model,
                  WeatherModel& weather_model,
                  XPlanePreferences& preferences);
@@ -75,6 +93,8 @@ private:
     void apply_editor_route();
     void handle_editor_key(char key, char virtual_key);
     void handle_airport_key(char key, char virtual_key);
+    void handle_briefing_key(char key, char virtual_key);
+    void open_briefing_entry();
     void search_airport();
 
     static void draw(XPLMWindowID window_id, void* refcon);
@@ -94,11 +114,18 @@ private:
     AirspaceModel& airspace_model_;
     FuelModel& fuel_model_;
     PlanningModel& planning_model_;
+    BriefingModel& briefing_model_;
+    XPlaneBriefingLibrary& briefing_library_;
     MovingMapModel& moving_map_model_;
+    NavigationDatabaseModel& navigation_database_model_;
     RouteProgressModel& route_progress_model_;
     WeatherModel& weather_model_;
     XPlanePreferences& preferences_;
     mutable XPlaneMapTiles map_tiles_;
+    mutable XPlanePdfViewer pdf_viewer_;
+    mutable std::vector<MapHitTarget> map_hit_targets_;
+    std::optional<FlightPlanLeg> pending_map_direct_to_;
+    std::string map_action_message_;
     XPLMWindowID window_id_{nullptr};
     std::string airport_query_;
 };

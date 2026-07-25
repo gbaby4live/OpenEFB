@@ -65,13 +65,14 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
 ## M5: route weather
 
 - `WeatherModel` owns simulator-independent departure and destination METAR
-  snapshots, including the flight-plan revision used to select the airports.
+  snapshots, their source, and the flight-plan revision used to select airports.
 - `XPlaneWeather` selects the first and last airport entries in the active route
-  and reads X-Plane's last-downloaded METARs every 15 seconds.
-- Weather access runs only from a before-flight-model callback as required by
-  the X-Plane SDK and remains strictly read-only.
-- The Weather page wraps reports into high-contrast route cards and explains
-  empty reports when Real Weather data is unavailable.
+  and requests worldwide reports from AviationWeather.gov on a bounded worker.
+- The main-thread callback reads X-Plane's last-downloaded METAR as an immediate
+  fallback. Successful internet reports are cached per airport; source priority
+  is online, simulator, then saved cache, and no XPLM call leaves the main thread.
+- The Weather page labels each report ONLINE, X-PLANE, or SAVED CACHE and explains
+  empty reports only after all three sources are unavailable.
 
 ## M6: route progress
 
@@ -117,6 +118,11 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
 - The panel always shows the provider attribution required by OpenStreetMap and
   OpenTopoMap. Non-Windows adapters retain the vector fallback until native HTTP
   and image-decoding implementations are added.
+- A visible source indicator distinguishes online tiles, cached tiles, and the
+  vector-only fallback instead of presenting an empty panel as a complete map.
+- Decoded tiles also retain a bounded 64-by-64 opaque color grid. It is drawn
+  beneath the normal texture so the basemap remains visible on an X-Plane graphics
+  bridge that accepts plugin geometry but does not composite the uploaded texture.
 
 ## M9: interactive flight-plan builder
 
@@ -166,6 +172,11 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
   keeps the route and aircraft above the optional operational layers.
 - WX currently indicates METAR availability at route endpoint airports; it is
   intentionally not presented as precipitation radar.
+- `XPlaneNavigationDatabase` incrementally scans installed airports, VORs, NDBs,
+  and fixes on X-Plane's main thread and publishes immutable snapshots without a
+  long single-frame pause. Nearby symbols therefore remain available offline.
+- Selectable airport symbols create a pending direct-to action. A modal warning
+  requires explicit confirmation before `XPlaneFlightPlan` replaces the FMS route.
 
 ## M12: aircraft planning
 
@@ -180,3 +191,41 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
 - The page does not synthesize takeoff distance, landing distance, or V-speeds.
   Those require a future aircraft performance profile backed by an AFM/POH or
   aircraft-provided data.
+
+## M13: briefing workspace
+
+- `BriefingModel` owns tab selection, the immutable-facing local library list,
+  selected airport filter, stable selected path, interactive checklist state,
+  and bounded multiline notes without depending on XPLM or the filesystem.
+- Summary composes existing telemetry, route, weather, progress, and planning
+  snapshots rather than creating a second source of flight truth.
+- `XPlaneBriefingLibrary` scans only the two dedicated user-library folders,
+  accepts a bounded set of safe document extensions, caps entry count and text
+  size, and performs no filesystem work from draw callbacks.
+- TXT and Markdown previews stay inside the EFB. On Windows, `XPlanePdfViewer`
+  renders PDF pages on a worker through `Windows.Data.Pdf`, decodes the resulting
+  page image with WIC, and creates its OpenGL texture only on X-Plane's draw thread.
+  Previous, Next, and Close remain explicit pilot actions.
+- DEP and DEST filters are derived from the current route and remain selected
+  across asynchronous refreshes. There is no combined All view, keeping each
+  airport's generated briefing and charts together.
+- Completed worker results are consumed exactly once before their optional slot
+  is cleared, preventing a moved-from empty list from replacing visible entries.
+- Visible Up/Down controls mirror mouse-wheel list navigation for cockpit setups
+  where precise wheel input is inconvenient.
+- Notes use a separate preference file so saving them cannot corrupt window
+  geometry. They are bounded to 2,000 characters and saved when the window is
+  hidden or destroyed.
+- The library adapter observes route endpoints on X-Plane's flight-loop thread,
+  copies the required snapshots, and queues all folder, document, catalog, and
+  chart work to a background thread.
+- Every endpoint receives ICAO-specific Charts and Documents folders plus a
+  latest generated PDF briefing that opens in the in-app viewer. FAA d-TPP XML is parsed in the core, cached once
+  per 28-day cycle, and used only to download charts belonging to that airport.
+- PDF downloads are size-bounded, signature-checked, written through temporary
+  files, and marked by cycle only after the airport set completes. Existing
+  cycle markers suppress redundant network traffic.
+- Automatic chart caching is limited to official FAA coverage. Subscription
+  services whose terms prohibit offline caching are not scraped or archived.
+- A chart-status text entry remains visible when the FAA catalog, airport record,
+  or individual downloads are unavailable, so an empty chart folder is explained.

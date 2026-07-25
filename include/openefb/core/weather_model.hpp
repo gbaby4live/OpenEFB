@@ -5,15 +5,24 @@
 
 namespace openefb {
 
+enum class WeatherSource {
+    none,
+    online,
+    simulator,
+    cache,
+};
+
 struct AirportWeather {
     std::string airport_id;
     std::string metar;
+    WeatherSource source{WeatherSource::none};
 };
 
 struct WeatherSnapshot {
     bool available{false};
     AirportWeather departure;
     AirportWeather destination;
+    std::string online_status;
     std::uint64_t route_revision{};
     std::uint64_t revision{};
 };

@@ -1,10 +1,13 @@
 #include "openefb/core/application.hpp"
 #include "openefb/core/airspace_model.hpp"
 #include "openefb/core/airport_info.hpp"
+#include "openefb/core/briefing_model.hpp"
 #include "openefb/core/flight_plan_model.hpp"
+#include "openefb/core/faa_chart_catalog.hpp"
 #include "openefb/core/flight_plan_editor.hpp"
 #include "openefb/core/fuel_model.hpp"
 #include "openefb/core/moving_map_model.hpp"
+#include "openefb/core/navigation_database_model.hpp"
 #include "openefb/core/planning_model.hpp"
 #include "openefb/core/route_progress_model.hpp"
 #include "openefb/core/telemetry_model.hpp"
@@ -98,12 +101,12 @@ int main() {
     require(ui_model.active_page() == openefb::EfbPage::home, "UI starts on the home page");
     require(ui_model.active_page_title() == "Home", "home page title is available");
     constexpr int navigation_x = 30;
-    const int aircraft_y = openefb::navigation_top + 6 * (openefb::navigation_item_height +
+    const int briefing_y = openefb::navigation_top + 6 * (openefb::navigation_item_height +
                            openefb::navigation_item_gap) + 10;
-    require(ui_model.select_at(navigation_x, aircraft_y), "aircraft navigation click is handled");
-    require(ui_model.active_page() == openefb::EfbPage::aircraft, "navigation changes the active page");
-    require(!ui_model.select_at(openefb::sidebar_width + 20, aircraft_y), "content clicks do not navigate");
-    require(ui_model.active_page() == openefb::EfbPage::aircraft, "ignored clicks preserve the active page");
+    require(ui_model.select_at(navigation_x, briefing_y), "briefing navigation click is handled");
+    require(ui_model.active_page() == openefb::EfbPage::briefing, "navigation changes the active page");
+    require(!ui_model.select_at(openefb::sidebar_width + 20, briefing_y), "content clicks do not navigate");
+    require(ui_model.active_page() == openefb::EfbPage::briefing, "ignored clicks preserve the active page");
     ui_model.select_page(openefb::EfbPage::settings);
     require(ui_model.active_page_title() == "Settings", "pages can be selected directly");
     ui_model.select_page(openefb::EfbPage::planning);
@@ -248,8 +251,10 @@ int main() {
     openefb::WeatherModel weather_model;
     require(!weather_model.snapshot().available, "weather starts unavailable");
     openefb::WeatherSnapshot weather;
-    weather.departure = {"KSEA", "KSEA 251653Z 18008KT 10SM FEW020 15/09 A3004"};
-    weather.destination = {"KPDX", "KPDX 251653Z 22005KT 10SM SCT025 17/10 A3001"};
+    weather.departure = {"KSEA", "KSEA 251653Z 18008KT 10SM FEW020 15/09 A3004",
+                         openefb::WeatherSource::online};
+    weather.destination = {"KPDX", "KPDX 251653Z 22005KT 10SM SCT025 17/10 A3001",
+                           openefb::WeatherSource::cache};
     weather.route_revision = 4;
     weather_model.update(weather);
     require(weather_model.snapshot().available, "weather update marks the service available");
@@ -257,11 +262,25 @@ int main() {
             "departure weather is retained");
     require(weather_model.snapshot().destination.metar.find("KPDX") == 0,
             "destination METAR is retained");
+    require(weather_model.snapshot().departure.source == openefb::WeatherSource::online &&
+                weather_model.snapshot().destination.source == openefb::WeatherSource::cache,
+            "weather source priority is visible to the UI");
     require(weather_model.snapshot().route_revision == 4,
             "weather records their source route revision");
     require(weather_model.snapshot().revision == 1, "weather updates have revisions");
     weather_model.mark_unavailable();
     require(!weather_model.snapshot().available, "weather can be marked unavailable");
+
+    openefb::NavigationDatabaseModel navigation_database;
+    navigation_database.begin_load();
+    require(navigation_database.snapshot().loading, "navigation database reports loading");
+    navigation_database.update({{"KSEA", "Seattle Tacoma Intl", openefb::WaypointKind::airport,
+                                 47.449, -122.309}}, false);
+    const auto navigation_snapshot = navigation_database.snapshot();
+    require(navigation_snapshot.available && navigation_snapshot.points->size() == 1,
+            "navigation database publishes map points");
+    require(navigation_snapshot.points->front().identifier == "KSEA",
+            "navigation map points retain identifiers");
 
     openefb::RouteProgressModel route_progress_model;
     require(!route_progress_model.snapshot().available, "route progress starts unavailable");
@@ -353,6 +372,60 @@ int main() {
     planning_model.update(overloaded, fuel_model.snapshot(), route_progress_model.snapshot());
     require(planning_model.snapshot().overweight && !planning_model.snapshot().dispatch_ready,
             "overweight aircraft never receive a passing planning outlook");
+
+    openefb::BriefingModel briefing_model;
+    require(briefing_model.active_tab() == openefb::BriefingTab::summary,
+            "briefing starts on the combined flight summary");
+    briefing_model.select_tab(openefb::BriefingTab::checklist);
+    require(briefing_model.toggle_checklist_item(0) &&
+                briefing_model.completed_checklist_items() == 1,
+            "briefing checklist items can be completed independently");
+    briefing_model.reset_checklist();
+    require(briefing_model.completed_checklist_items() == 0,
+            "briefing checklist can be reset for a new flight");
+    briefing_model.set_notes("Departure note");
+    require(briefing_model.append_note('\n') && briefing_model.append_note('A') &&
+                briefing_model.notes() == "Departure note\nA",
+            "flight notes accept multiline printable input");
+    require(briefing_model.backspace_note() && briefing_model.notes() == "Departure note\n",
+            "flight notes support editing");
+    std::vector<openefb::LibraryEntry> library_entries{
+        {openefb::LibraryCategory::chart, "KSEA chart.pdf", "Charts/KSEA chart.pdf", {}},
+        {openefb::LibraryCategory::document, "Checklist.txt", "Documents/Checklist.txt", "Line one"},
+    };
+    briefing_model.update_library(std::move(library_entries), "Local library");
+    require(briefing_model.library().size() == 2 && briefing_model.selected_entry() &&
+                briefing_model.selected_entry()->category == openefb::LibraryCategory::chart,
+            "local chart and document entries are published to the briefing model");
+    require(briefing_model.select_entry(1) &&
+                briefing_model.selected_entry()->text_content == "Line one",
+            "briefing library selection exposes in-EFB text documents");
+    const auto selected_library_path = briefing_model.selected_entry()->path;
+    briefing_model.select_library_airport("kpdx");
+    briefing_model.update_library({{openefb::LibraryCategory::chart, "KSEA/Arrival.pdf", "chart.pdf", {}},
+                                    {openefb::LibraryCategory::document, "KPDX/Briefing.txt",
+                                     selected_library_path, "Updated"}}, "Refreshed");
+    require(briefing_model.library_airport() == "KPDX" && briefing_model.selected_entry() &&
+                briefing_model.selected_entry()->path == selected_library_path,
+            "library refresh preserves airport filter and selected document");
+    require(openefb::faa_cycle_for_date(2026, 7, 25) == "2607" &&
+                openefb::faa_cycle_for_date(2026, 8, 6) == "2608" &&
+                openefb::faa_cycle_for_date(2026, 1, 10) == "2513",
+            "FAA chart cycle selection follows 28-day effective dates across years");
+    const std::string faa_catalog =
+        "<digital_tpp><state_code><airport_name ID=\"SEATTLE\" icao_ident=\" KSEA \">"
+        "<record><chart_code>APD</chart_code><chart_name>AIRPORT &amp; DIAGRAM</chart_name>"
+        "<pdf_name>00582AD.PDF</pdf_name></record>"
+        "<record><chart_code>IAP</chart_code><chart_name>ILS RWY 16L</chart_name>"
+        "<pdf_name>00582I16L.PDF</pdf_name></record></airport_name>"
+        "<airport_name ID=\"PORTLAND\" icao_ident=\"KPDX\"><record>"
+        "<chart_code>APD</chart_code><chart_name>AIRPORT DIAGRAM</chart_name>"
+        "<pdf_name>00330AD.PDF</pdf_name></record></airport_name></state_code></digital_tpp>";
+    const auto faa_charts = openefb::parse_faa_chart_catalog(faa_catalog, "ksea");
+    require(faa_charts.size() == 2 && faa_charts[0].code == "APD" &&
+                faa_charts[0].name == "AIRPORT & DIAGRAM" &&
+                faa_charts[1].pdf_name == "00582I16L.PDF",
+            "FAA d-TPP catalog parser selects and decodes one airport's charts");
 
     openefb::MovingMapModel moving_map;
     require(moving_map.style() == openefb::MapStyle::street,

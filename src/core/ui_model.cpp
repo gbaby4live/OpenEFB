@@ -10,7 +10,7 @@ const std::array<NavigationItem, 9>& navigation_items() noexcept {
         NavigationItem{EfbPage::progress, "Progress"},
         NavigationItem{EfbPage::weather, "Weather"},
         NavigationItem{EfbPage::planning, "Planning"},
-        NavigationItem{EfbPage::aircraft, "Aircraft"},
+        NavigationItem{EfbPage::briefing, "Briefing"},
         NavigationItem{EfbPage::settings, "Settings"},
         NavigationItem{EfbPage::about, "About"},
     };

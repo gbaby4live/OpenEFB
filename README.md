@@ -39,22 +39,43 @@ After installing the built `OpenEFB` plugin package, open it from:
 For a local Windows build, copy the generated `build/OpenEFB` directory into
 `X-Plane 12/Resources/plugins` before starting the simulator.
 
-The M12 shell provides a dark tablet layout with a live UTC status bar and nine
+The M13 shell provides a dark tablet layout with a live UTC status bar and nine
 mouse-selectable pages: Home, Flight Plan, Airports, Progress, Weather, Planning,
-Aircraft, Settings, and About. The Fuel page is now Aircraft Planning, combining
+Briefing, Settings, and About. The Fuel page is now Aircraft Planning, combining
 fuel with weight-and-balance information. Window position and size are saved in X-Plane's
 preferences directory. Home and Aircraft display
 live aircraft identity, position, altitude, ground speed, heading, and vertical
 speed sampled from X-Plane at 5 Hz. High-contrast text and an enforced minimum
 window size keep telemetry cards legible without overlapping. Flight Plan reads
 the active X-Plane FMS route once per second and highlights the leg currently
-being flown. Weather displays the latest downloaded METAR for the first and last
-airports in that route, refreshing every 15 seconds. Progress calculates direct
+being flown. Weather requests current METARs for the first and last route airports
+from AviationWeather.gov, then falls back to X-Plane weather and a saved local
+cache; each card labels the source. Progress calculates direct
 distance, true bearing, and estimated time to the active waypoint and destination
 from live aircraft groundspeed. Fuel shows remaining mass, total engine burn,
 endurance, and estimated range from X-Plane's live fuel system. The window
 resource is created on first use and released whenever the plugin is disabled
 or stopped.
+
+Version 0.13.1 fixes X-Plane texture allocation for visible Street/Topo tiles,
+prevents completed Library scans from being republished as empty lists, and adds
+visible Up/Down Library controls. The Weather page displays online connection
+status and retries failed internet reports once per minute.
+
+Version 0.13.2 accepts both current raw METAR station formats and exposes the map
+pipeline stage on Home. Invalid cached responses are discarded, only validated
+PNG tiles are saved, and the display distinguishes network, PNG decoding, and
+successful texture-upload states.
+
+Version 0.13.3 binds map textures through X-Plane's graphics API and activates
+the textured drawing state before upload. Briefing now has only Departure and
+Destination airport views. PDF charts render inside OpenEFB with Previous, Next,
+and Close controls using the Windows PDF renderer included with the operating system.
+
+Version 0.13.5 generates each airport briefing as an in-app PDF, reports FAA chart
+download status inside the CHART list, and enables current Windows TLS for FAA
+downloads. Map and PDF page pixels are forced opaque and their basemap/page pass
+draws without alpha blending to avoid invisible textures in X-Plane's graphics bridge.
 
 Fuel flow is displayed in US gallons per hour using the standard avgas density
 of 6.0 lb per US gallon. Remaining fuel mass stays visible in kilograms and
@@ -66,9 +87,10 @@ one-click OpenTopoMap Topo view. It overlays range rings, aircraft heading, the
 programmed route, the active leg, key waypoint labels, destination distance and
 ETE, and supports mouse-wheel zoom from 5 to 320 nautical miles. Visible tiles
 are loaded in the background, cached locally, and credited inside the map;
-aircraft and fuel summaries remain visible below the panel. Internet access is
-required for tiles not already cached. The native tile adapter for macOS and
-Linux is planned; those builds currently retain the vector map fallback.
+aircraft and fuel summaries remain visible below the panel. A source label shows
+whether the visible basemap came from the network, cache, or vector fallback.
+Internet access is required for tiles not already cached. The native tile adapter
+for macOS and Linux is planned; those builds retain the vector map fallback.
 
 Flight Plan now includes an interactive builder with clearly labeled Departure
 and Destination fields. Select Edit, type an exact airport identifier, and use
@@ -84,8 +106,10 @@ runway identifiers, calculated runway dimensions, surfaces, communication
 frequencies, and the installed SID, STAR, and approach names. Searches run in
 the background so scanning large scenery files does not pause the simulator.
 
-Home now has independent WX, APT, NAV, and AIR switches. Airports and navigation
-symbols use the active route, WX highlights route endpoints that have current
+Home now has independent WX, APT, NAV, and AIR switches. The installed X-Plane
+navigation database supplies nearby airport, VOR, NDB, and fix symbols in addition
+to the active route. Airport symbols are selectable; OpenEFB asks for confirmation
+before replacing the current FMS route with a direct route to that airport. WX highlights route endpoints that have current
 METAR reports, and AIR draws installed X-Plane OpenAIR boundaries including
 polygons, circles, and directional arcs. Custom Data airspace takes priority
 over X-Plane's default file. Parsing happens in the background and on-screen
@@ -97,6 +121,27 @@ engine burn and an adjustable reserve to estimate trip fuel, reserve fuel, fuel
 margin, and landing weight. Weight and fuel warnings are aircraft-aware, while
 the page explicitly avoids invented runway distances or V-speeds when no
 aircraft performance profile is available.
+
+Briefing combines the active aircraft, route, departure and destination weather,
+and planning readiness on one summary. Its interactive six-item checklist resets
+for each flight session, and its multiline notes are saved between sessions.
+The local Library scans `Output/preferences/OpenEFB/Library/Charts` and
+`Output/preferences/OpenEFB/Library/Documents` for PDF, PNG, JPG, TXT, and MD
+files. Text and Markdown are readable inside OpenEFB; charts, images, and PDFs
+remain selected inside the Library, and PDF charts open in an in-app page viewer. The list
+supports mouse-wheel navigation, keeps its selected document through a refresh,
+and provides persistent DEP and DEST filters so both route archives remain easy
+to select. Refresh discovers newly added files.
+
+When a route contains departure and destination airports, OpenEFB automatically
+creates `Charts/<ICAO>` and `Documents/<ICAO>` archive folders for both endpoints.
+It saves a current OpenEFB briefing document with route, METAR, weight, fuel,
+reserve, and landing estimates for every airport worldwide. For airports listed
+in the official U.S. FAA d-TPP catalog, a background worker also downloads the
+current airport diagram and terminal-procedure PDFs. A cycle marker prevents
+unchanged charts from being downloaded again; a new effective cycle refreshes
+the saved set. Other countries keep their generated briefing and user-provided
+documents because no single worldwide source permits permanent offline caching.
 
 See [docs/architecture.md](docs/architecture.md) for architectural boundaries
 and threading invariants, and [docs/product-roadmap.md](docs/product-roadmap.md)

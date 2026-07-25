@@ -8,6 +8,9 @@
 #include <Shlwapi.h>
 #include <WinHttp.h>
 #include <wincodec.h>
+#ifndef GL_BGRA
+#define GL_BGRA 0x80E1
+#endif
 #elif APL
 #include <OpenGL/gl.h>
 #else
@@ -15,6 +18,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -35,6 +39,7 @@ namespace openefb::xplane {
 namespace {
 
 constexpr int tile_size = 256;
+constexpr int fallback_cells = 64;
 constexpr double pi = 3.14159265358979323846;
 
 struct TileKey {
@@ -49,7 +54,19 @@ struct TileKey {
 struct DecodedTile {
     TileKey key;
     std::vector<std::uint8_t> pixels;
+    MapTileSource source{MapTileSource::vector_only};
 };
+
+struct TileTexture {
+    GLuint id{};
+    std::array<std::uint8_t, fallback_cells * fallback_cells * 3> fallback{};
+};
+
+bool is_png(const std::vector<std::uint8_t>& data) {
+    constexpr std::array<std::uint8_t, 8> signature{137, 80, 78, 71, 13, 10, 26, 10};
+    return data.size() >= signature.size() &&
+           std::equal(signature.begin(), signature.end(), data.begin());
+}
 
 double clamp_latitude(double latitude) {
     return std::clamp(latitude, -85.05112878, 85.05112878);
@@ -123,13 +140,16 @@ std::vector<std::uint8_t> download_tile(const TileKey& key) {
                               : L"a.tile.opentopomap.org";
     const std::wstring path = L"/" + std::to_wstring(key.zoom) + L"/" +
                               std::to_wstring(key.x) + L"/" + std::to_wstring(key.y) + L".png";
-    HINTERNET session = WinHttpOpen(L"OpenEFB/0.8 (+https://github.com/Gbaby4live/OpenEFB)",
+    HINTERNET session = WinHttpOpen(L"OpenEFB/0.13.5 (+https://github.com/Gbaby4live/OpenEFB)",
                                     WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) {
         return {};
     }
     WinHttpSetTimeouts(session, 3000, 3000, 5000, 5000);
+    DWORD secure_protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
+    WinHttpSetOption(session, WINHTTP_OPTION_SECURE_PROTOCOLS,
+                     &secure_protocols, sizeof(secure_protocols));
     HINTERNET connection = WinHttpConnect(session, host, INTERNET_DEFAULT_HTTPS_PORT, 0);
     HINTERNET request = connection ? WinHttpOpenRequest(
         connection, L"GET", path.c_str(), nullptr, WINHTTP_NO_REFERER,
@@ -185,7 +205,7 @@ std::vector<std::uint8_t> decode_png(const std::vector<std::uint8_t>& png) {
                                                    &decoder)) &&
         SUCCEEDED(decoder->GetFrame(0, &frame)) &&
         SUCCEEDED(factory->CreateFormatConverter(&converter)) &&
-        SUCCEEDED(converter->Initialize(frame, GUID_WICPixelFormat32bppRGBA,
+        SUCCEEDED(converter->Initialize(frame, GUID_WICPixelFormat32bppBGRA,
                                         WICBitmapDitherTypeNone, nullptr, 0.0,
                                         WICBitmapPaletteTypeCustom))) {
         UINT width{};
@@ -195,6 +215,8 @@ std::vector<std::uint8_t> decode_png(const std::vector<std::uint8_t>& png) {
             if (FAILED(converter->CopyPixels(nullptr, tile_size * 4,
                                              static_cast<UINT>(pixels.size()), pixels.data()))) {
                 pixels.clear();
+            } else {
+                for (std::size_t index = 3; index < pixels.size(); index += 4) pixels[index] = 255;
             }
         }
     }
@@ -228,12 +250,13 @@ public:
         }
         for (const auto& [key, texture] : textures_) {
             static_cast<void>(key);
-            GLuint id = texture;
+            GLuint id = texture.id;
             glDeleteTextures(1, &id);
         }
     }
 
     void draw(MapStyle style, const MapTileViewport& viewport) {
+        XPLMSetGraphicsState(0, 1, 0, 0, 0, 0, 0);
         upload_ready();
         const int zoom = tile_zoom(viewport);
         const int count = 1 << zoom;
@@ -247,7 +270,6 @@ public:
         const int last_y = std::min(count - 1, static_cast<int>(std::floor((center_world_y + (screen_center_y - viewport.bottom)) / tile_size)));
         std::set<TileKey> visible_keys;
 
-        XPLMSetGraphicsState(0, 1, 0, 0, 1, 0, 0);
         glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
         for (int raw_x = first_x; raw_x <= last_x; ++raw_x) {
             const int x = (raw_x % count + count) % count;
@@ -272,7 +294,39 @@ public:
                 const double u_right = (draw_right - tile_left) / tile_size;
                 const double v_top = (tile_top - draw_top) / tile_size;
                 const double v_bottom = (tile_top - draw_bottom) / tile_size;
-                XPLMBindTexture2d(static_cast<int>(found->second), 0);
+                // The decoded-tile color grid is drawn first with untextured
+                // geometry. It remains visible on graphics backends that accept
+                // plugin drawing but fail to composite an uploaded texture.
+                XPLMSetGraphicsState(0, 0, 0, 0, 0, 0, 0);
+                constexpr double cell_size = static_cast<double>(tile_size) / fallback_cells;
+                glBegin(GL_QUADS);
+                for (int row = 0; row < fallback_cells; ++row) {
+                    const double cell_top = tile_top - row * cell_size;
+                    const double cell_bottom = cell_top - cell_size;
+                    if (cell_top <= viewport.bottom || cell_bottom >= viewport.top) continue;
+                    for (int column = 0; column < fallback_cells; ++column) {
+                        const double cell_left = tile_left + column * cell_size;
+                        const double cell_right = cell_left + cell_size;
+                        if (cell_right <= viewport.left || cell_left >= viewport.right) continue;
+                        const auto color_index = static_cast<std::size_t>(
+                            (row * fallback_cells + column) * 3);
+                        glColor3ub(found->second.fallback[color_index],
+                                  found->second.fallback[color_index + 1],
+                                  found->second.fallback[color_index + 2]);
+                        glVertex2d(std::max(cell_left, static_cast<double>(viewport.left)),
+                                   std::max(cell_bottom, static_cast<double>(viewport.bottom)));
+                        glVertex2d(std::min(cell_right, static_cast<double>(viewport.right)),
+                                   std::max(cell_bottom, static_cast<double>(viewport.bottom)));
+                        glVertex2d(std::min(cell_right, static_cast<double>(viewport.right)),
+                                   std::min(cell_top, static_cast<double>(viewport.top)));
+                        glVertex2d(std::max(cell_left, static_cast<double>(viewport.left)),
+                                   std::min(cell_top, static_cast<double>(viewport.top)));
+                    }
+                }
+                glEnd();
+                XPLMSetGraphicsState(0, 1, 0, 0, 0, 0, 0);
+                glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+                XPLMBindTexture2d(static_cast<int>(found->second.id), 0);
                 glBegin(GL_QUADS);
                 glTexCoord2d(u_left, v_bottom); glVertex2d(draw_left, draw_bottom);
                 glTexCoord2d(u_right, v_bottom); glVertex2d(draw_right, draw_bottom);
@@ -287,7 +341,7 @@ public:
                 ++iterator;
                 continue;
             }
-            GLuint texture = iterator->second;
+            GLuint texture = iterator->second.id;
             glDeleteTextures(1, &texture);
             iterator = textures_.erase(iterator);
         }
@@ -315,16 +369,42 @@ private:
             ready.swap(ready_);
         }
         for (auto& tile : ready) {
-            GLuint texture{};
-            glGenTextures(1, &texture);
-            glBindTexture(GL_TEXTURE_2D, texture);
+            int texture_number{};
+            XPLMGenerateTextureNumbers(&texture_number, 1);
+            const GLuint texture = static_cast<GLuint>(texture_number);
+            XPLMBindTexture2d(texture_number, 0);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+            // WIC and X-Plane's Windows OpenGL path both use BGRA byte order.
+            // Keeping the decoded buffer in that native layout mirrors the
+            // proven upload path used by established X-Plane tablet plugins.
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tile_size, tile_size, 0,
-                         GL_RGBA, GL_UNSIGNED_BYTE, tile.pixels.data());
-            textures_.emplace(tile.key, texture);
+                         GL_BGRA, GL_UNSIGNED_BYTE, tile.pixels.data());
+            TileTexture stored;
+            stored.id = texture;
+            constexpr int sample_step = tile_size / fallback_cells;
+            for (int row = 0; row < fallback_cells; ++row) {
+                for (int column = 0; column < fallback_cells; ++column) {
+                    const int source_x = column * sample_step + sample_step / 2;
+                    const int source_y = row * sample_step + sample_step / 2;
+                    const auto source = static_cast<std::size_t>((source_y * tile_size + source_x) * 4);
+                    const auto destination = static_cast<std::size_t>(
+                        (row * fallback_cells + column) * 3);
+                    stored.fallback[destination] = tile.pixels[source + 2];
+                    stored.fallback[destination + 1] = tile.pixels[source + 1];
+                    stored.fallback[destination + 2] = tile.pixels[source];
+                }
+            }
+            textures_.emplace(tile.key, std::move(stored));
+            source_.store(tile.source);
+            {
+                std::lock_guard lock(mutex_);
+                status_text_ = tile.source == MapTileSource::online ? "MAP ONLINE"
+                                                                   : "MAP CACHE";
+            }
         }
     }
 
@@ -345,14 +425,23 @@ private:
             }
             const auto path = cache_path(cache_directory_, key);
             auto encoded = fresh_cache_file(path) ? read_file(path) : std::vector<std::uint8_t>{};
+            if (!encoded.empty() && !is_png(encoded)) {
+                try { std::filesystem::remove(path); } catch (...) {}
+                encoded.clear();
+            }
+            MapTileSource source = encoded.empty() ? MapTileSource::vector_only : MapTileSource::cache;
             if (encoded.empty()) {
                 encoded = download_tile(key);
-                if (!encoded.empty()) {
+                if (is_png(encoded)) {
+                    source = MapTileSource::online;
                     save_file(path, encoded);
                 } else {
+                    encoded.clear();
                     // A previously cached tile is preferable to an empty map when a
                     // provider is temporarily unavailable.
                     encoded = read_file(path);
+                    if (is_png(encoded)) source = MapTileSource::cache;
+                    else encoded.clear();
                 }
             }
             auto pixels = decode_png(encoded);
@@ -360,8 +449,10 @@ private:
                 std::lock_guard lock(mutex_);
                 pending_.erase(key);
                 if (!pixels.empty()) {
-                    ready_.push_back({key, std::move(pixels)});
+                    status_text_ = "TILE READY FOR DISPLAY";
+                    ready_.push_back({key, std::move(pixels), source});
                 } else {
+                    status_text_ = encoded.empty() ? "TILE NETWORK FAILED" : "TILE PNG DECODE FAILED";
                     failed_until_[key] = std::chrono::steady_clock::now() + std::chrono::seconds(30);
                 }
             }
@@ -372,15 +463,24 @@ private:
     }
 
     std::filesystem::path cache_directory_;
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::condition_variable condition_;
     std::deque<TileKey> requests_;
     std::deque<DecodedTile> ready_;
     std::set<TileKey> pending_;
     std::map<TileKey, std::chrono::steady_clock::time_point> failed_until_;
-    std::map<TileKey, GLuint> textures_;
+    std::map<TileKey, TileTexture> textures_;
+    std::atomic<MapTileSource> source_{MapTileSource::vector_only};
+    std::string status_text_{"REQUESTING MAP TILES"};
     bool stopping_{false};
     std::thread worker_;
+
+public:
+    [[nodiscard]] MapTileSource source() const noexcept { return source_.load(); }
+    [[nodiscard]] std::string status_text() const {
+        std::lock_guard lock(mutex_);
+        return status_text_;
+    }
 };
 
 XPlaneMapTiles::XPlaneMapTiles(std::filesystem::path cache_directory)
@@ -391,5 +491,9 @@ XPlaneMapTiles::~XPlaneMapTiles() = default;
 void XPlaneMapTiles::draw(MapStyle style, const MapTileViewport& viewport) {
     implementation_->draw(style, viewport);
 }
+
+MapTileSource XPlaneMapTiles::source() const noexcept { return implementation_->source(); }
+
+std::string XPlaneMapTiles::status_text() const { return implementation_->status_text(); }
 
 } // namespace openefb::xplane

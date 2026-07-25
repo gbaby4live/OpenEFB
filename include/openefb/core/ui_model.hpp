@@ -12,7 +12,7 @@ enum class EfbPage {
     progress,
     weather,
     planning,
-    aircraft,
+    briefing,
     settings,
     about,
 };

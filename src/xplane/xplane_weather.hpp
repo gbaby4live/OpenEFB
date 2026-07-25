@@ -5,11 +5,15 @@
 
 #include <XPLMProcessing.h>
 
+#include <filesystem>
+#include <memory>
+
 namespace openefb::xplane {
 
 class XPlaneWeather final {
 public:
-    XPlaneWeather(WeatherModel& model, const FlightPlanModel& flight_plan_model);
+    XPlaneWeather(WeatherModel& model, const FlightPlanModel& flight_plan_model,
+                  std::filesystem::path cache_directory);
     ~XPlaneWeather();
 
     XPlaneWeather(const XPlaneWeather&) = delete;
@@ -25,6 +29,8 @@ private:
 
     WeatherModel& model_;
     const FlightPlanModel& flight_plan_model_;
+    class Implementation;
+    std::unique_ptr<Implementation> implementation_;
     XPLMFlightLoopID flight_loop_id_{nullptr};
 };
 

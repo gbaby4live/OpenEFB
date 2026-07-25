@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(OpenEFB VERSION 0.12.0 LANGUAGES CXX)
+project(OpenEFB VERSION 0.13.5 LANGUAGES CXX)
 
 option(OPEN_EFB_BUILD_TESTS "Build OpenEFB unit tests" ON)
 set(OPEN_EFB_XPLANE_SDK_PATH "" CACHE PATH "Path to the X-Plane SDK root")
@@ -13,10 +13,13 @@ add_library(openefb_core STATIC
     src/core/airspace_model.cpp
     src/core/airport_info.cpp
     src/core/application.cpp
+    src/core/briefing_model.cpp
     src/core/flight_plan_model.cpp
     src/core/flight_plan_editor.cpp
     src/core/fuel_model.cpp
+    src/core/faa_chart_catalog.cpp
     src/core/moving_map_model.cpp
+    src/core/navigation_database_model.cpp
     src/core/planning_model.cpp
     src/core/route_progress_model.cpp
     src/core/telemetry_model.cpp
@@ -41,10 +44,13 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
         src/xplane/plugin.cpp
         src/xplane/xplane_airspace.cpp
         src/xplane/xplane_airport_data.cpp
+        src/xplane/xplane_briefing_library.cpp
         src/xplane/xplane_flight_plan.cpp
         src/xplane/xplane_fuel.cpp
         src/xplane/xplane_menu.cpp
         src/xplane/xplane_map_tiles.cpp
+        src/xplane/xplane_navigation_database.cpp
+        src/xplane/xplane_pdf_viewer.cpp
         src/xplane/xplane_planning.cpp
         src/xplane/xplane_preferences.cpp
         src/xplane/xplane_route_progress.cpp
@@ -75,7 +81,7 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
             "${OPEN_EFB_XPLANE_SDK_PATH}/Libraries/Win"
         )
         target_link_libraries(openefb_plugin PRIVATE XPLM_64)
-        target_link_libraries(openefb_plugin PRIVATE opengl32 windowscodecs winhttp)
+        target_link_libraries(openefb_plugin PRIVATE opengl32 windowscodecs winhttp shell32 windowsapp)
     elseif(APPLE)
         set(OPEN_EFB_PLUGIN_NAME mac)
         target_compile_definitions(openefb_plugin PRIVATE

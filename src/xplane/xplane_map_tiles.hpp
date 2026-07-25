@@ -5,8 +5,11 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <string>
 
 namespace openefb::xplane {
+
+enum class MapTileSource { vector_only, online, cache };
 
 struct MapTileViewport {
     int left{};
@@ -27,6 +30,8 @@ public:
     XPlaneMapTiles& operator=(const XPlaneMapTiles&) = delete;
 
     void draw(MapStyle style, const MapTileViewport& viewport);
+    [[nodiscard]] MapTileSource source() const noexcept;
+    [[nodiscard]] std::string status_text() const;
 
 private:
     class Implementation;

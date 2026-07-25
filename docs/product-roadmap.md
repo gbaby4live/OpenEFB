@@ -22,10 +22,14 @@ original open-source code and visuals.
   navaids, and installed OpenAIR polygons, circles, and arcs
 - M12: live aircraft weight-and-balance summary, adjustable fuel reserve,
   trip-fuel margin, predicted landing weight, and dispatch outlook
+- M13: combined flight briefing, interactive checklist, persistent notes, and
+  route-driven airport archives with generated documents, FAA charts, and a
+  user-provided local chart and aircraft-document library; revised with stable
+  DEP/DEST filters, online-first weather fallbacks, installed navigation symbols,
+  and confirmed map-to-FMS airport navigation
 
 ## Planned operational workflow
 
-- M13: charts, aircraft documents, checklists, notes, and flight briefing
 - M14: route import/export, settings, accessibility, and cross-platform polish
 
 Licensed chart products and proprietary Microsoft assets will not be copied.

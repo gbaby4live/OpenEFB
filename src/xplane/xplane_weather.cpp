@@ -2,36 +2,305 @@
 
 #include <XPLMWeather.h>
 
+#if IBM
+#include <Windows.h>
+#include <WinHttp.h>
+#endif
+
 #include <algorithm>
+#include <chrono>
+#include <condition_variable>
+#include <fstream>
+#include <map>
+#include <mutex>
+#include <sstream>
+#include <thread>
 #include <utility>
+#include <vector>
 
 namespace openefb::xplane {
 
 namespace {
 
-constexpr float sample_interval_seconds = 15.0F;
+constexpr float sample_interval_seconds = 5.0F;
 
-AirportWeather read_metar(const FlightPlanLeg& leg) {
+std::pair<std::string, std::string> route_airports(const FlightPlanSnapshot& flight_plan) {
+    const auto departure = std::find_if(flight_plan.legs.begin(), flight_plan.legs.end(),
+                                        [](const FlightPlanLeg& leg) {
+                                            return leg.kind == WaypointKind::airport && !leg.identifier.empty();
+                                        });
+    const auto destination = std::find_if(flight_plan.legs.rbegin(), flight_plan.legs.rend(),
+                                          [](const FlightPlanLeg& leg) {
+                                              return leg.kind == WaypointKind::airport && !leg.identifier.empty();
+                                          });
+    return {departure == flight_plan.legs.end() ? std::string{} : departure->identifier,
+            destination == flight_plan.legs.rend() ? std::string{} : destination->identifier};
+}
+
+AirportWeather simulator_metar(std::string airport) {
     AirportWeather weather;
-    weather.airport_id = leg.identifier;
+    weather.airport_id = std::move(airport);
+    if (weather.airport_id.empty()) return weather;
     XPLMFixedString150_t metar{};
     XPLMGetMETARForAirport(weather.airport_id.c_str(), &metar);
     weather.metar = metar.buffer;
+    if (!weather.metar.empty()) weather.source = WeatherSource::simulator;
     return weather;
+}
+
+std::string read_cache(const std::filesystem::path& root, const std::string& airport) {
+    try {
+        std::ifstream input(root / (airport + ".metar"), std::ios::binary | std::ios::ate);
+        if (!input) return {};
+        const auto size = input.tellg();
+        if (size <= 0 || size > 2048) return {};
+        std::string value(static_cast<std::size_t>(size), '\0');
+        input.seekg(0);
+        input.read(value.data(), size);
+        return input ? value : std::string{};
+    } catch (...) {
+        return {};
+    }
+}
+
+void save_cache(const std::filesystem::path& root, const std::string& airport,
+                const std::string& metar) {
+    try {
+        std::filesystem::create_directories(root);
+        std::ofstream output(root / (airport + ".metar"), std::ios::binary | std::ios::trunc);
+        output << metar;
+    } catch (...) {
+    }
+}
+
+#if IBM
+struct WeatherDownload { std::string body; std::string status; };
+
+WeatherDownload download_metars(const std::vector<std::string>& airports) {
+    if (airports.empty()) return {{}, "Waiting for route airports"};
+    std::wstring path = L"/api/data/metar?format=json&taf=false&hours=2&ids=";
+    for (std::size_t index = 0; index < airports.size(); ++index) {
+        if (index) path += L",";
+        path.append(airports[index].begin(), airports[index].end());
+    }
+    HINTERNET session = WinHttpOpen(L"OpenEFB/0.13.5 (+https://github.com/Gbaby4live/OpenEFB)",
+                                    WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+                                    WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!session) return {{}, "Online weather connection could not start"};
+    WinHttpSetTimeouts(session, 3000, 3000, 5000, 5000);
+    DWORD secure_protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
+    WinHttpSetOption(session, WINHTTP_OPTION_SECURE_PROTOCOLS,
+                     &secure_protocols, sizeof(secure_protocols));
+    HINTERNET connection = WinHttpConnect(session, L"aviationweather.gov",
+                                           INTERNET_DEFAULT_HTTPS_PORT, 0);
+    HINTERNET request = connection ? WinHttpOpenRequest(
+        connection, L"GET", path.c_str(), nullptr, WINHTTP_NO_REFERER,
+        WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE) : nullptr;
+    std::string result;
+    std::string status_message = connection ? "Online weather request failed"
+                                            : "Online weather host could not be reached";
+    if (request && WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                                      WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+        WinHttpReceiveResponse(request, nullptr)) {
+        DWORD status{};
+        DWORD status_size = sizeof(status);
+        if (WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                                WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size,
+                                WINHTTP_NO_HEADER_INDEX) && status == 200) {
+            status_message = "Online weather connected";
+            for (;;) {
+                DWORD available{};
+                if (!WinHttpQueryDataAvailable(request, &available) || available == 0 ||
+                    result.size() + available > 16 * 1024) break;
+                const auto offset = result.size();
+                result.resize(offset + available);
+                DWORD read{};
+                if (!WinHttpReadData(request, result.data() + offset, available, &read)) {
+                    result.clear();
+                    break;
+                }
+                result.resize(offset + read);
+            }
+        } else if (status != 0) {
+            status_message = "Online weather HTTP " + std::to_string(status);
+        }
+    }
+    if (request) WinHttpCloseHandle(request);
+    if (connection) WinHttpCloseHandle(connection);
+    WinHttpCloseHandle(session);
+    if (result.empty() && status_message == "Online weather connected")
+        status_message = "Online weather returned no report";
+    return {std::move(result), std::move(status_message)};
+}
+#else
+struct WeatherDownload { std::string body; std::string status; };
+WeatherDownload download_metars(const std::vector<std::string>&) {
+    return {{}, "Online weather adapter is unavailable on this platform"};
+}
+#endif
+
+std::map<std::string, std::string> parse_metars(
+    std::string_view value, const std::vector<std::string>& requested_airports) {
+    std::map<std::string, std::string> result;
+    // Prefer the API's structured raw-observation field. This remains robust
+    // if JSON field order or whitespace changes.
+    std::size_t json_position = 0;
+    while ((json_position = value.find("\"rawOb\"", json_position)) != std::string_view::npos) {
+        const auto colon = value.find(':', json_position + 7);
+        const auto quote = colon == std::string_view::npos
+            ? std::string_view::npos : value.find('"', colon + 1);
+        if (quote == std::string_view::npos) break;
+        std::string raw;
+        std::size_t cursor = quote + 1;
+        for (; cursor < value.size(); ++cursor) {
+            const char character = value[cursor];
+            if (character == '"') break;
+            if (character == '\\' && cursor + 1 < value.size()) {
+                const char escaped = value[++cursor];
+                raw += escaped == 'n' ? '\n' : escaped == 'r' ? '\r' : escaped;
+            } else {
+                raw += character;
+            }
+        }
+        for (const auto& airport : requested_airports) {
+            if (raw.find(airport) != std::string::npos) result[airport] = raw;
+        }
+        json_position = cursor;
+    }
+    if (!result.empty()) return result;
+
+    // Retain compatibility with raw-text responses and optional METAR prefixes.
+    std::istringstream input{std::string(value)};
+    std::string line;
+    while (std::getline(input, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        for (const auto& airport : requested_airports) {
+            const auto position = line.find(airport);
+            if (position != std::string::npos) {
+                // The raw endpoint has used both "KSEA ..." and
+                // "METAR KSEA ..." forms. Index by the requested station
+                // instead of assuming the identifier is the first token.
+                result[airport] = line.substr(position);
+            }
+        }
+    }
+    return result;
 }
 
 } // namespace
 
-XPlaneWeather::XPlaneWeather(WeatherModel& model, const FlightPlanModel& flight_plan_model)
-    : model_(model), flight_plan_model_(flight_plan_model) {}
+class XPlaneWeather::Implementation final {
+public:
+    explicit Implementation(std::filesystem::path cache_directory)
+        : cache_directory_(std::move(cache_directory)) {}
+
+    void start() {
+        {
+            std::lock_guard lock(mutex_);
+            stopping_ = false;
+            requested_ = {};
+            request_pending_ = false;
+            online_.clear();
+            cached_.clear();
+            status_ = "Online weather is starting";
+        }
+        worker_ = std::thread([this] { work(); });
+    }
+
+    void stop() {
+        {
+            std::lock_guard lock(mutex_);
+            stopping_ = true;
+        }
+        condition_.notify_one();
+        if (worker_.joinable()) worker_.join();
+    }
+
+    void request(std::string departure, std::string destination) {
+        std::lock_guard lock(mutex_);
+        const std::pair requested{std::move(departure), std::move(destination)};
+        const auto now = std::chrono::steady_clock::now();
+        const auto interval = online_.empty() ? std::chrono::minutes(1) : std::chrono::minutes(5);
+        if (requested == requested_ && now - last_request_ < interval) return;
+        requested_ = requested;
+        last_request_ = now;
+        request_pending_ = true;
+        condition_.notify_one();
+    }
+
+    AirportWeather best(std::string airport, AirportWeather simulator) const {
+        if (airport.empty()) return {};
+        std::lock_guard lock(mutex_);
+        if (const auto found = online_.find(airport); found != online_.end()) {
+            return {std::move(airport), found->second, WeatherSource::online};
+        }
+        if (!simulator.metar.empty()) return simulator;
+        if (const auto found = cached_.find(airport); found != cached_.end()) {
+            return {std::move(airport), found->second, WeatherSource::cache};
+        }
+        return simulator;
+    }
+
+    std::string status() const {
+        std::lock_guard lock(mutex_);
+        return status_;
+    }
+
+private:
+    void work() {
+        for (;;) {
+            std::pair<std::string, std::string> requested;
+            {
+                std::unique_lock lock(mutex_);
+                condition_.wait(lock, [this] { return stopping_ || request_pending_; });
+                if (stopping_) return;
+                requested = requested_;
+                request_pending_ = false;
+            }
+            std::vector<std::string> airports;
+            if (!requested.first.empty()) airports.push_back(requested.first);
+            if (!requested.second.empty() && requested.second != requested.first) airports.push_back(requested.second);
+            std::map<std::string, std::string> cached;
+            for (const auto& airport : airports) {
+                if (auto value = read_cache(cache_directory_, airport); !value.empty()) cached[airport] = std::move(value);
+            }
+            const auto response = download_metars(airports);
+            const auto downloaded = parse_metars(response.body, airports);
+            for (const auto& [airport, metar] : downloaded) save_cache(cache_directory_, airport, metar);
+            {
+                std::lock_guard lock(mutex_);
+                cached_ = std::move(cached);
+                online_ = downloaded;
+                status_ = downloaded.empty() && !response.body.empty()
+                    ? "Online weather report format was not recognized" : response.status;
+                for (const auto& [airport, metar] : downloaded) cached_[airport] = metar;
+            }
+        }
+    }
+
+    std::filesystem::path cache_directory_;
+    mutable std::mutex mutex_;
+    std::condition_variable condition_;
+    std::thread worker_;
+    std::pair<std::string, std::string> requested_;
+    std::map<std::string, std::string> online_;
+    std::map<std::string, std::string> cached_;
+    std::string status_{"Online weather is starting"};
+    std::chrono::steady_clock::time_point last_request_{};
+    bool request_pending_{false};
+    bool stopping_{false};
+};
+
+XPlaneWeather::XPlaneWeather(WeatherModel& model, const FlightPlanModel& flight_plan_model,
+                             std::filesystem::path cache_directory)
+    : model_(model), flight_plan_model_(flight_plan_model),
+      implementation_(std::make_unique<Implementation>(std::move(cache_directory))) {}
 
 XPlaneWeather::~XPlaneWeather() { stop(); }
 
 bool XPlaneWeather::start() {
-    if (flight_loop_id_) {
-        return true;
-    }
-
+    if (flight_loop_id_) return true;
+    implementation_->start();
     XPLMCreateFlightLoop_t parameters{};
     parameters.structSize = sizeof(parameters);
     parameters.phase = xplm_FlightLoop_Phase_BeforeFlightModel;
@@ -39,10 +308,10 @@ bool XPlaneWeather::start() {
     parameters.refcon = this;
     flight_loop_id_ = XPLMCreateFlightLoop(&parameters);
     if (!flight_loop_id_) {
+        implementation_->stop();
         model_.mark_unavailable();
         return false;
     }
-
     XPLMScheduleFlightLoop(flight_loop_id_, -1.0F, 1);
     return true;
 }
@@ -51,6 +320,7 @@ void XPlaneWeather::stop() {
     if (flight_loop_id_) {
         XPLMDestroyFlightLoop(flight_loop_id_);
         flight_loop_id_ = nullptr;
+        implementation_->stop();
     }
     model_.mark_unavailable();
 }
@@ -63,29 +333,17 @@ void XPlaneWeather::sample() {
         model_.update(std::move(snapshot));
         return;
     }
-
-    const auto departure = std::find_if(flight_plan.legs.begin(), flight_plan.legs.end(),
-                                        [](const FlightPlanLeg& leg) {
-                                            return leg.kind == WaypointKind::airport && !leg.identifier.empty();
-                                        });
-    const auto destination = std::find_if(flight_plan.legs.rbegin(), flight_plan.legs.rend(),
-                                          [](const FlightPlanLeg& leg) {
-                                              return leg.kind == WaypointKind::airport && !leg.identifier.empty();
-                                          });
-    if (departure != flight_plan.legs.end()) {
-        snapshot.departure = read_metar(*departure);
-    }
-    if (destination != flight_plan.legs.rend()) {
-        snapshot.destination = read_metar(*destination);
-    }
+    auto [departure, destination] = route_airports(flight_plan);
+    implementation_->request(departure, destination);
+    snapshot.departure = implementation_->best(departure, simulator_metar(departure));
+    snapshot.destination = implementation_->best(destination, simulator_metar(destination));
+    snapshot.online_status = implementation_->status();
     model_.update(std::move(snapshot));
 }
 
 float XPlaneWeather::flight_loop(float, float, int, void* refcon) {
     auto* weather = static_cast<XPlaneWeather*>(refcon);
-    if (!weather) {
-        return 0.0F;
-    }
+    if (!weather) return 0.0F;
     weather->sample();
     return sample_interval_seconds;
 }
