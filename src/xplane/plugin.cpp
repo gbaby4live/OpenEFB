@@ -1,14 +1,17 @@
 #include "openefb/core/application.hpp"
 #include "openefb/core/ui_model.hpp"
+#include "openefb/core/telemetry_model.hpp"
 #include "openefb/core/window_controller.hpp"
 #include "xplane_menu.hpp"
 #include "xplane_preferences.hpp"
+#include "xplane_telemetry.hpp"
 #include "xplane_window.hpp"
 
 #include <XPLMPlugin.h>
 #include <XPLMUtilities.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -19,7 +22,10 @@ namespace {
 struct PluginRuntime {
     PluginRuntime()
         : application(xplane_log),
-          window_controller([this] { return openefb::xplane::XPlaneWindow::create(ui_model, preferences); }),
+          telemetry(telemetry_model),
+          window_controller([this] {
+              return openefb::xplane::XPlaneWindow::create(ui_model, telemetry_model, preferences);
+          }),
           menu([this] { toggle_window(); }) {}
 
     static void xplane_log(std::string_view message) {
@@ -38,7 +44,9 @@ struct PluginRuntime {
 
     openefb::Application application;
     openefb::UiModel ui_model;
+    openefb::TelemetryModel telemetry_model;
     openefb::xplane::XPlanePreferences preferences;
+    openefb::xplane::XPlaneTelemetry telemetry;
     openefb::WindowController window_controller;
     openefb::xplane::XPlaneMenu menu;
 };
@@ -74,6 +82,7 @@ PLUGIN_API int XPluginStart(char* out_name, char* out_signature, char* out_descr
 
 PLUGIN_API void XPluginStop() {
     if (runtime) {
+        runtime->telemetry.stop();
         runtime->window_controller.reset();
         runtime->application.stop();
         runtime.reset();
@@ -81,18 +90,26 @@ PLUGIN_API void XPluginStop() {
 }
 
 PLUGIN_API int XPluginEnable() {
-    return runtime && runtime->application.enable() ? 1 : 0;
+    if (!runtime || !runtime->application.enable()) {
+        return 0;
+    }
+    if (!runtime->telemetry.start()) {
+        PluginRuntime::xplane_log("telemetry datarefs unavailable");
+    }
+    return 1;
 }
 
 PLUGIN_API void XPluginDisable() {
     if (runtime) {
+        runtime->telemetry.stop();
         runtime->window_controller.reset();
         runtime->application.disable();
     }
 }
 
-PLUGIN_API void XPluginReceiveMessage(XPLMPluginID, int message, void*) {
-    if (runtime && message == XPLM_MSG_PLANE_LOADED) {
+PLUGIN_API void XPluginReceiveMessage(XPLMPluginID, int message, void* parameter) {
+    if (runtime && message == XPLM_MSG_PLANE_LOADED && reinterpret_cast<std::intptr_t>(parameter) == 0) {
+        runtime->telemetry.refresh_aircraft_identity();
         runtime->application.on_flight_loaded();
     }
 }

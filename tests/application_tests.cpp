@@ -1,4 +1,5 @@
 #include "openefb/core/application.hpp"
+#include "openefb/core/telemetry_model.hpp"
 #include "openefb/core/ui_model.hpp"
 #include "openefb/core/window_controller.hpp"
 #include "openefb/core/window_geometry.hpp"
@@ -100,6 +101,28 @@ int main() {
     require(valid_geometry.valid(), "normal window geometry is valid");
     require(valid_geometry.width() == 860 && valid_geometry.height() == 580, "geometry reports its size");
     require(!invalid_geometry.valid(), "undersized window geometry is rejected");
+    auto compact_geometry = openefb::WindowGeometry{100, 700, 700, 260};
+    compact_geometry.enforce_minimum(760, 560);
+    require(compact_geometry.width() == 760 && compact_geometry.height() == 560,
+            "restored geometry expands to the current layout minimum");
+
+    openefb::TelemetryModel telemetry_model;
+    require(!telemetry_model.snapshot().available, "telemetry starts unavailable");
+    openefb::TelemetrySnapshot telemetry;
+    telemetry.aircraft_name = "Cessna 172 SP";
+    telemetry.latitude_degrees = 47.449;
+    telemetry.longitude_degrees = -122.309;
+    telemetry.altitude_feet = 5400.0;
+    telemetry.ground_speed_knots = 118.0;
+    telemetry.heading_degrees = 725.0;
+    telemetry.vertical_speed_fpm = 450.0;
+    telemetry_model.update(telemetry);
+    require(telemetry_model.snapshot().available, "telemetry update marks data available");
+    require(telemetry_model.snapshot().heading_degrees == 5.0, "heading is normalized");
+    require(telemetry_model.snapshot().revision == 1, "telemetry updates have revisions");
+    require(telemetry_model.snapshot().aircraft_name == "Cessna 172 SP", "aircraft identity is retained");
+    telemetry_model.mark_unavailable();
+    require(!telemetry_model.snapshot().available, "telemetry can be marked unavailable");
 
     std::cout << "OpenEFB core tests passed\n";
     return EXIT_SUCCESS;

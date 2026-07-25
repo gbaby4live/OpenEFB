@@ -39,9 +39,12 @@ After installing the built `OpenEFB` plugin package, open it from:
 For a local Windows build, copy the generated `build/OpenEFB` directory into
 `X-Plane 12/Resources/plugins` before starting the simulator.
 
-The M2 shell provides a dark tablet layout with a live UTC status bar and four
+The M3 shell provides a dark tablet layout with a live UTC status bar and four
 mouse-selectable pages: Home, Aircraft, Settings, and About. Window position and
-size are saved in X-Plane's preferences directory. Its window resource is
+size are saved in X-Plane's preferences directory. Home and Aircraft display
+live aircraft identity, position, altitude, ground speed, heading, and vertical
+speed sampled from X-Plane at 5 Hz. High-contrast text and an enforced minimum
+window size keep telemetry cards legible without overlapping. Its window resource is
 created on first use and released whenever the plugin is disabled or stopped.
 
 See [docs/architecture.md](docs/architecture.md) for architectural boundaries

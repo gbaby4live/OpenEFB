@@ -1,6 +1,7 @@
 #pragma once
 
 #include "openefb/core/ui_model.hpp"
+#include "openefb/core/telemetry_model.hpp"
 #include "openefb/core/window_controller.hpp"
 #include "xplane_preferences.hpp"
 
@@ -12,7 +13,8 @@ namespace openefb::xplane {
 
 class XPlaneWindow final : public WindowSurface {
 public:
-    static std::unique_ptr<WindowSurface> create(UiModel& ui_model, XPlanePreferences& preferences);
+    static std::unique_ptr<WindowSurface> create(UiModel& ui_model, TelemetryModel& telemetry_model,
+                                                 XPlanePreferences& preferences);
 
     ~XPlaneWindow() override;
 
@@ -24,7 +26,7 @@ public:
     [[nodiscard]] bool visible() const override;
 
 private:
-    XPlaneWindow(UiModel& ui_model, XPlanePreferences& preferences);
+    XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model, XPlanePreferences& preferences);
 
     void render(XPLMWindowID window_id) const;
     void save_geometry() const;
@@ -37,6 +39,7 @@ private:
     static int handle_wheel(XPLMWindowID window_id, int x, int y, int wheel, int clicks, void* refcon);
 
     UiModel& ui_model_;
+    TelemetryModel& telemetry_model_;
     XPlanePreferences& preferences_;
     XPLMWindowID window_id_{nullptr};
 };

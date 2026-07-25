@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <ctime>
 #include <string>
@@ -26,6 +27,8 @@ namespace {
 
 constexpr int initial_width = 860;
 constexpr int initial_height = 580;
+constexpr int minimum_width = 760;
+constexpr int minimum_height = 560;
 
 struct Color {
     float red;
@@ -34,15 +37,15 @@ struct Color {
     float alpha;
 };
 
-constexpr Color canvas{0.045F, 0.067F, 0.094F, 1.0F};
-constexpr Color status_bar{0.063F, 0.094F, 0.129F, 1.0F};
-constexpr Color sidebar{0.035F, 0.051F, 0.075F, 1.0F};
-constexpr Color active_navigation{0.055F, 0.255F, 0.345F, 1.0F};
-constexpr Color card{0.078F, 0.110F, 0.145F, 1.0F};
-constexpr Color accent{0.18F, 0.78F, 0.88F, 1.0F};
-constexpr Color text_primary{0.88F, 0.93F, 0.97F, 1.0F};
-constexpr Color text_muted{0.55F, 0.64F, 0.71F, 1.0F};
-constexpr Color connected{0.30F, 0.86F, 0.53F, 1.0F};
+constexpr Color canvas{0.035F, 0.052F, 0.075F, 1.0F};
+constexpr Color status_bar{0.055F, 0.086F, 0.118F, 1.0F};
+constexpr Color sidebar{0.025F, 0.039F, 0.058F, 1.0F};
+constexpr Color active_navigation{0.045F, 0.310F, 0.410F, 1.0F};
+constexpr Color card{0.090F, 0.132F, 0.175F, 1.0F};
+constexpr Color accent{0.30F, 0.92F, 1.0F, 1.0F};
+constexpr Color text_primary{1.0F, 1.0F, 1.0F, 1.0F};
+constexpr Color text_muted{0.82F, 0.87F, 0.92F, 1.0F};
+constexpr Color connected{0.42F, 1.0F, 0.62F, 1.0F};
 
 void draw_rectangle(int left, int top, int right, int bottom, Color color) {
     glColor4f(color.red, color.green, color.blue, color.alpha);
@@ -79,27 +82,62 @@ void draw_card(int left, int top, int right, int bottom, std::string_view title,
     draw_text(left + 18, top - 57, detail, text_muted);
 }
 
-void draw_page_content(EfbPage page, int left, int top, int right, int bottom) {
-    const int content_width = right - left;
+std::string format_flight_summary(const TelemetrySnapshot& telemetry) {
+    if (!telemetry.available) {
+        return "Waiting for live simulator data";
+    }
+    char value[96]{};
+    std::snprintf(value, sizeof(value), "Altitude %.0f ft  |  Ground speed %.0f kt",
+                  telemetry.altitude_feet, telemetry.ground_speed_knots);
+    return value;
+}
+
+std::string format_position(const TelemetrySnapshot& telemetry) {
+    if (!telemetry.available) {
+        return "Position unavailable";
+    }
+    char value[96]{};
+    std::snprintf(value, sizeof(value), "Lat %.4f  |  Lon %.4f",
+                  telemetry.latitude_degrees, telemetry.longitude_degrees);
+    return value;
+}
+
+std::string format_motion(const TelemetrySnapshot& telemetry) {
+    if (!telemetry.available) {
+        return "Motion data unavailable";
+    }
+    char value[96]{};
+    std::snprintf(value, sizeof(value), "Heading %03d deg  |  V/S %+.0f fpm",
+                  static_cast<int>(std::lround(telemetry.heading_degrees)) % 360,
+                  telemetry.vertical_speed_fpm);
+    return value;
+}
+
+void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
+                       int left, int top, int right, int bottom) {
     const int card_right = std::max(left + 260, right - 28);
     switch (page) {
     case EfbPage::home:
         draw_text(left, top, "Welcome aboard", text_primary, xplmFont_Basic);
-        draw_text(left, top - 28, "OpenEFB is connected and ready for your flight.", text_muted);
-        draw_card(left, top - 62, left + std::max(230, content_width / 2 - 10), top - 158,
-                  "Flight overview", "No flight plan loaded");
-        draw_card(left + std::max(250, content_width / 2 + 10), top - 62, card_right, top - 158,
-                  "Simulator", "X-Plane connection active");
+        draw_text(left, top - 28, telemetry.available ? telemetry.aircraft_name : "Connecting to X-Plane telemetry...",
+                  text_muted);
+        draw_card(left, top - 62, card_right, top - 158,
+                  "Flight overview", format_flight_summary(telemetry));
         draw_card(left, top - 178, card_right, top - 274,
-                  "Next up", "Live aircraft data arrives in M3");
+                  "Position", format_position(telemetry));
+        draw_card(left, top - 294, card_right, top - 390,
+                  "Motion", format_motion(telemetry));
         break;
     case EfbPage::aircraft:
         draw_text(left, top, "Aircraft", text_primary, xplmFont_Basic);
-        draw_text(left, top - 28, "Your active aircraft will appear here.", text_muted);
+        draw_text(left, top - 28, telemetry.available ? telemetry.aircraft_name : "Waiting for active aircraft",
+                  text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Simulator connection", "Connected to X-Plane");
+                  "Position", format_position(telemetry));
         draw_card(left, top - 178, card_right, top - 274,
-                  "Telemetry", "Position, speed, altitude, and heading in M3");
+                  "Altitude and speed", format_flight_summary(telemetry));
+        draw_card(left, top - 294, card_right, top - 390,
+                  "Motion", format_motion(telemetry));
         break;
     case EfbPage::settings:
         draw_text(left, top, "Settings", text_primary, xplmFont_Basic);
@@ -113,7 +151,7 @@ void draw_page_content(EfbPage page, int left, int top, int right, int bottom) {
         draw_text(left, top, "About OpenEFB", text_primary, xplmFont_Basic);
         draw_text(left, top - 28, "An open-source electronic flight bag for X-Plane 12.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Version", "0.2.0 - M2 UI foundation");
+                  "Version", "0.3.0 - M3 live telemetry");
         draw_card(left, top - 178, card_right, top - 274,
                   "Project", "Built in the open for the flight-sim community");
         break;
@@ -124,16 +162,18 @@ void draw_page_content(EfbPage page, int left, int top, int right, int bottom) {
 
 } // namespace
 
-std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, XPlanePreferences& preferences) {
-    auto window = std::unique_ptr<XPlaneWindow>(new XPlaneWindow(ui_model, preferences));
+std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, TelemetryModel& telemetry_model,
+                                                    XPlanePreferences& preferences) {
+    auto window = std::unique_ptr<XPlaneWindow>(new XPlaneWindow(ui_model, telemetry_model, preferences));
     if (!window->window_id_) {
         return nullptr;
     }
     return window;
 }
 
-XPlaneWindow::XPlaneWindow(UiModel& ui_model, XPlanePreferences& preferences)
-    : ui_model_(ui_model), preferences_(preferences) {
+XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
+                           XPlanePreferences& preferences)
+    : ui_model_(ui_model), telemetry_model_(telemetry_model), preferences_(preferences) {
     WindowGeometry geometry;
     if (const auto stored = preferences_.load_geometry()) {
         geometry = *stored;
@@ -150,6 +190,7 @@ XPlaneWindow::XPlaneWindow(UiModel& ui_model, XPlanePreferences& preferences)
         geometry.right = geometry.left + initial_width;
         geometry.bottom = geometry.top - initial_height;
     }
+    geometry.enforce_minimum(minimum_width, minimum_height);
 
     XPLMCreateWindow_t parameters{};
     parameters.structSize = sizeof(parameters);
@@ -171,7 +212,7 @@ XPlaneWindow::XPlaneWindow(UiModel& ui_model, XPlanePreferences& preferences)
     window_id_ = XPLMCreateWindowEx(&parameters);
     if (window_id_) {
         XPLMSetWindowTitle(window_id_, "OpenEFB");
-        XPLMSetWindowResizingLimits(window_id_, 680, 440, 1600, 1200);
+        XPLMSetWindowResizingLimits(window_id_, minimum_width, minimum_height, 1600, 1200);
         XPLMSetWindowPositioningMode(window_id_, xplm_WindowPositionFree, -1);
     }
 }
@@ -215,7 +256,9 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
 
     draw_text(left + 20, top - 35, "OpenEFB", accent, xplmFont_Basic);
     draw_text(left + sidebar_width + 24, top - 35, ui_model_.active_page_title(), text_primary);
-    draw_text(right - 206, top - 35, "SIM CONNECTED", connected);
+    const auto& telemetry = telemetry_model_.snapshot();
+    draw_text(right - 206, top - 35, telemetry.available ? "LIVE DATA" : "WAITING",
+              telemetry.available ? connected : text_muted);
     draw_text(right - 92, top - 35, utc_time(), text_muted);
 
     const auto& items = navigation_items();
@@ -232,7 +275,7 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
 
     const int content_left = left + sidebar_width + 30;
     const int content_top = top - status_bar_height - 38;
-    draw_page_content(ui_model_.active_page(), content_left, content_top, right, bottom);
+    draw_page_content(ui_model_.active_page(), telemetry, content_left, content_top, right, bottom);
 }
 
 void XPlaneWindow::save_geometry() const {

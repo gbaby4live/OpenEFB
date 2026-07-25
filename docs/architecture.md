@@ -38,3 +38,15 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
   directory. Geometry is restored when the EFB window is recreated.
 - OpenGL calls occur only during the documented XPLM window drawing callback;
   application state changes remain outside rendering.
+
+## M3: live aircraft telemetry
+
+- `TelemetryModel` owns a simulator-independent, normalized snapshot of the
+  active aircraft's identity, position, altitude, speed, heading, and vertical
+  speed.
+- `XPlaneTelemetry` resolves built-in datarefs only after plugin enable and
+  samples them at 5 Hz from an after-flight-model callback.
+- The flight loop is destroyed before disable or stop completes, ensuring no
+  callback can outlive its owning runtime.
+- Rendering reads the latest snapshot but never performs dataref access or
+  changes application state.
