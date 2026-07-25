@@ -1,5 +1,6 @@
 #include "openefb/core/application.hpp"
 #include "openefb/core/flight_plan_model.hpp"
+#include "openefb/core/fuel_model.hpp"
 #include "openefb/core/route_progress_model.hpp"
 #include "openefb/core/telemetry_model.hpp"
 #include "openefb/core/ui_model.hpp"
@@ -90,7 +91,7 @@ int main() {
     require(ui_model.active_page() == openefb::EfbPage::home, "UI starts on the home page");
     require(ui_model.active_page_title() == "Home", "home page title is available");
     constexpr int navigation_x = 30;
-    const int aircraft_y = openefb::navigation_top + 4 * (openefb::navigation_item_height +
+    const int aircraft_y = openefb::navigation_top + 5 * (openefb::navigation_item_height +
                            openefb::navigation_item_gap) + 10;
     require(ui_model.select_at(navigation_x, aircraft_y), "aircraft navigation click is handled");
     require(ui_model.active_page() == openefb::EfbPage::aircraft, "navigation changes the active page");
@@ -203,6 +204,29 @@ int main() {
             "ETE is suppressed near zero groundspeed");
     route_progress_model.mark_unavailable();
     require(!route_progress_model.snapshot().available, "route progress can be marked unavailable");
+
+    openefb::FuelModel fuel_model;
+    require(!fuel_model.snapshot().available, "fuel starts unavailable");
+    fuel_model.update(180.0, 36.0, 120.0, 9);
+    require(fuel_model.snapshot().available, "fuel update marks data available");
+    require(fuel_model.snapshot().fuel_remaining_kg == 180.0,
+            "fuel remaining is retained in kilograms");
+    require(fuel_model.snapshot().endurance_available &&
+                fuel_model.snapshot().endurance_hours == 5.0,
+            "fuel endurance uses total engine burn");
+    require(fuel_model.snapshot().fuel_flow_us_gallons_per_hour > 13.2 &&
+                fuel_model.snapshot().fuel_flow_us_gallons_per_hour < 13.3,
+            "fuel flow is converted to US GPH on a standard avgas basis");
+    require(fuel_model.snapshot().range_available &&
+                fuel_model.snapshot().estimated_range_nm == 600.0,
+            "fuel range uses live groundspeed");
+    fuel_model.update(180.0, 0.0, 0.0, 10);
+    require(!fuel_model.snapshot().endurance_available,
+            "endurance is withheld without measurable fuel flow");
+    require(!fuel_model.snapshot().range_available,
+            "range is withheld without endurance and groundspeed");
+    fuel_model.mark_unavailable();
+    require(!fuel_model.snapshot().available, "fuel can be marked unavailable");
 
     std::cout << "OpenEFB core tests passed\n";
     return EXIT_SUCCESS;

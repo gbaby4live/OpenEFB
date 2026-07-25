@@ -288,8 +288,62 @@ void draw_progress_page(const RouteProgressSnapshot& progress, int left, int top
               "Estimate basis", "Direct distance and current groundspeed");
 }
 
+std::string format_fuel_mass(const FuelSnapshot& fuel) {
+    constexpr double kilograms_to_pounds = 2.2046226218;
+    char value[96]{};
+    std::snprintf(value, sizeof(value), "%.1f kg  |  %.0f lb",
+                  fuel.fuel_remaining_kg, fuel.fuel_remaining_kg * kilograms_to_pounds);
+    return value;
+}
+
+std::string format_fuel_flow(const FuelSnapshot& fuel) {
+    if (!fuel.endurance_available) {
+        return "Waiting for measurable engine fuel flow";
+    }
+    char value[96]{};
+    std::snprintf(value, sizeof(value), "%.1f GPH  |  US gallons, 6.0 lb/gal basis",
+                  fuel.fuel_flow_us_gallons_per_hour);
+    return value;
+}
+
+std::string format_fuel_estimates(const FuelSnapshot& fuel) {
+    if (!fuel.endurance_available) {
+        return "Start an engine to calculate endurance";
+    }
+    const double bounded_hours = std::min(999.0, fuel.endurance_hours);
+    const int total_minutes = static_cast<int>(std::lround(bounded_hours * 60.0));
+    std::string value = "Endurance " + std::to_string(total_minutes / 60) + " hr " +
+                        std::to_string(total_minutes % 60) + " min";
+    if (fuel.range_available) {
+        char range[48]{};
+        std::snprintf(range, sizeof(range), "  |  Range %.0f NM", fuel.estimated_range_nm);
+        value += range;
+    } else {
+        value += "  |  Range unavailable while parked";
+    }
+    return value;
+}
+
+void draw_fuel_page(const FuelSnapshot& fuel, int left, int top, int right) {
+    const int card_right = std::max(left + 260, right - 28);
+    draw_text(left, top, "Fuel", text_primary, xplmFont_Basic);
+    draw_text(left, top - 28, "Live totals and estimates from the active aircraft", text_muted);
+    if (!fuel.available) {
+        draw_card(left, top - 62, card_right, top - 158,
+                  "Fuel status", "Waiting for X-Plane fuel data");
+        return;
+    }
+    draw_card(left, top - 62, card_right, top - 158,
+              "Fuel remaining", format_fuel_mass(fuel));
+    draw_card(left, top - 178, card_right, top - 274,
+              "Current burn", format_fuel_flow(fuel));
+    draw_card(left, top - 294, card_right, top - 390,
+              "Estimates", format_fuel_estimates(fuel));
+}
+
 void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                        const FlightPlanSnapshot& flight_plan,
+                       const FuelSnapshot& fuel,
                        const RouteProgressSnapshot& route_progress,
                        const WeatherSnapshot& weather,
                        int left, int top, int right, int bottom) {
@@ -315,6 +369,9 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
     case EfbPage::weather:
         draw_weather_page(weather, left, top, right);
         break;
+    case EfbPage::fuel:
+        draw_fuel_page(fuel, left, top, right);
+        break;
     case EfbPage::aircraft:
         draw_text(left, top, "Aircraft", text_primary, xplmFont_Basic);
         draw_text(left, top - 28, telemetry.available ? telemetry.aircraft_name : "Waiting for active aircraft",
@@ -338,24 +395,26 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         draw_text(left, top, "About OpenEFB", text_primary, xplmFont_Basic);
         draw_text(left, top - 28, "An open-source electronic flight bag for X-Plane 12.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Version", "0.6.0 - M6 route progress");
+                  "Version", "0.7.0 - M7 fuel monitoring");
         draw_card(left, top - 178, card_right, top - 274,
                   "Project", "Built in the open for the flight-sim community");
         break;
     }
 
-    draw_text(left, bottom + 22, "OPEN EFB  /  M6", text_muted);
+    draw_text(left, bottom + 22, "OPEN EFB  /  M7", text_muted);
 }
 
 } // namespace
 
 std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, TelemetryModel& telemetry_model,
                                                     FlightPlanModel& flight_plan_model,
+                                                    FuelModel& fuel_model,
                                                     RouteProgressModel& route_progress_model,
                                                     WeatherModel& weather_model,
                                                     XPlanePreferences& preferences) {
     auto window = std::unique_ptr<XPlaneWindow>(
-        new XPlaneWindow(ui_model, telemetry_model, flight_plan_model, route_progress_model,
+        new XPlaneWindow(ui_model, telemetry_model, flight_plan_model, fuel_model,
+                         route_progress_model,
                          weather_model, preferences));
     if (!window->window_id_) {
         return nullptr;
@@ -365,11 +424,13 @@ std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, Telemetry
 
 XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
                            FlightPlanModel& flight_plan_model,
+                           FuelModel& fuel_model,
                            RouteProgressModel& route_progress_model,
                            WeatherModel& weather_model,
                            XPlanePreferences& preferences)
     : ui_model_(ui_model), telemetry_model_(telemetry_model),
-      flight_plan_model_(flight_plan_model), route_progress_model_(route_progress_model),
+      flight_plan_model_(flight_plan_model), fuel_model_(fuel_model),
+      route_progress_model_(route_progress_model),
       weather_model_(weather_model),
       preferences_(preferences) {
     WindowGeometry geometry;
@@ -474,7 +535,8 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
     const int content_left = left + sidebar_width + 30;
     const int content_top = top - status_bar_height - 38;
     draw_page_content(ui_model_.active_page(), telemetry, flight_plan_model_.snapshot(),
-                      route_progress_model_.snapshot(), weather_model_.snapshot(),
+                      fuel_model_.snapshot(), route_progress_model_.snapshot(),
+                      weather_model_.snapshot(),
                       content_left, content_top, right, bottom);
 }
 

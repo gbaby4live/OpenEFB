@@ -83,3 +83,15 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
   distance and bearing remain available whenever route coordinates are valid.
 - The Progress page separates the active waypoint from the final destination
   and states that estimates use direct distance and current groundspeed.
+
+## M7: fuel monitoring
+
+- `FuelModel` normalizes remaining fuel and total engine burn, then derives
+  endurance and groundspeed-based range without depending on XPLM.
+- `XPlaneFuel` samples total fuel and the eight-element engine fuel-flow array
+  once per second, converting X-Plane's kilograms-per-second flow to kg/hour.
+- Endurance is withheld when burn is effectively zero, and range is withheld
+  below one knot so parked-aircraft estimates remain honest.
+- The Fuel page reports remaining mass in kilograms and pounds. Fuel flow is
+  converted to US GPH using a clearly labeled 6.0 lb/US gal avgas basis, while
+  endurance calculations remain in X-Plane's native mass units.

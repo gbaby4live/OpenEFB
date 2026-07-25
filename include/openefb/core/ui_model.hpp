@@ -10,6 +10,7 @@ enum class EfbPage {
     flight_plan,
     progress,
     weather,
+    fuel,
     aircraft,
     settings,
     about,
@@ -26,7 +27,7 @@ inline constexpr int navigation_top = 84;
 inline constexpr int navigation_item_height = 44;
 inline constexpr int navigation_item_gap = 8;
 
-[[nodiscard]] const std::array<NavigationItem, 7>& navigation_items() noexcept;
+[[nodiscard]] const std::array<NavigationItem, 8>& navigation_items() noexcept;
 
 class UiModel final {
 public:
