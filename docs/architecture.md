@@ -117,3 +117,23 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
 - The panel always shows the provider attribution required by OpenStreetMap and
   OpenTopoMap. Non-Windows adapters retain the vector fallback until native HTTP
   and image-decoding implementations are added.
+
+## M9: interactive flight-plan builder
+
+- `FlightPlanEditor` owns a simulator-independent draft copied from the live
+  route. Adding, removing, selecting, and reordering legs never changes the FMS
+  until the user explicitly chooses Apply.
+- Draft input accepts normalized waypoint identifiers and caps routes at
+  X-Plane's documented 100-entry limit. Core tests cover editing operations,
+  identifier normalization, cancellation, and external-change detection.
+- Departure and destination are explicit airport assignments rather than
+  implicit generic entries. Enroute additions are kept ahead of the assigned
+  destination, and endpoint labels remain visible while the draft is edited.
+- `XPlaneFlightPlan` resolves identifiers through X-Plane's navigation database
+  and pre-validates every draft leg before making any FMS write.
+- Apply is rejected if the live route changed since the draft was opened. A
+  successful write preserves the nearest valid displayed and active-leg indices,
+  clears obsolete trailing entries, and immediately refreshes the live model.
+- Keyboard focus and mouse hit testing stay in the window adapter. Typing and
+  Enter add identifiers, arrow keys or the wheel select rows, and dedicated
+  controls reorder or remove the selected leg.

@@ -142,6 +142,13 @@ void draw_card(int left, int top, int right, int bottom, std::string_view title,
     draw_text(left + 18, top - 57, detail, text_muted);
 }
 
+void draw_button(int left, int top, int right, int bottom, std::string_view label,
+                 bool emphasized = false) {
+    draw_rectangle(left, top, right, bottom, emphasized ? active_navigation : status_bar);
+    draw_border(left, top, right, bottom, emphasized ? accent : map_grid, 1.0F);
+    draw_text(left + 12, bottom + 9, label, emphasized ? text_primary : text_muted);
+}
+
 std::string format_flight_summary(const TelemetrySnapshot& telemetry) {
     if (!telemetry.available) {
         return "Waiting for live simulator data";
@@ -185,10 +192,101 @@ std::string format_leg_detail(const FlightPlanLeg& leg) {
     return value;
 }
 
+std::size_t editor_visible_start(const FlightPlanEditor& editor, std::size_t visible_count) {
+    if (editor.selected_index() < 0 || visible_count >= editor.legs().size()) {
+        return 0;
+    }
+    const std::size_t selected = static_cast<std::size_t>(editor.selected_index());
+    const std::size_t half = visible_count / 2;
+    return std::min(selected > half ? selected - half : 0,
+                    editor.legs().size() - visible_count);
+}
+
+void draw_flight_plan_editor(const FlightPlanEditor& editor,
+                             int left, int top, int right, int bottom) {
+    const int card_right = std::max(left + 420, right - 28);
+    draw_text(left, top, "Flight Plan Builder", text_primary, xplmFont_Basic);
+    draw_text(left, top - 27, editor.message(), text_muted);
+
+    const int endpoint_gap = 8;
+    const int endpoint_middle = (left + card_right) / 2;
+    draw_rectangle(left, top - 41, endpoint_middle - endpoint_gap / 2, top - 76, card);
+    draw_border(left, top - 41, endpoint_middle - endpoint_gap / 2, top - 76, map_grid, 1.0F);
+    draw_text(left + 11, top - 63,
+              "DEPARTURE  " + std::string(editor.departure() ? editor.departure()->identifier : "NOT SET"),
+              editor.departure() ? text_primary : text_muted);
+    draw_rectangle(endpoint_middle + endpoint_gap / 2, top - 41, card_right, top - 76, card);
+    draw_border(endpoint_middle + endpoint_gap / 2, top - 41, card_right, top - 76, map_grid, 1.0F);
+    draw_text(endpoint_middle + endpoint_gap / 2 + 11, top - 63,
+              "DESTINATION  " + std::string(editor.destination() ? editor.destination()->identifier : "NOT SET"),
+              editor.destination() ? text_primary : text_muted);
+
+    const int set_departure_left = card_right - 226;
+    draw_rectangle(left, top - 87, set_departure_left - 8, top - 122, card);
+    draw_border(left, top - 87, set_departure_left - 8, top - 122, map_grid, 1.0F);
+    const std::string entry = editor.input().empty()
+                                  ? "Type waypoint identifier..."
+                                  : std::string(editor.input()) + "_";
+    draw_text(left + 12, top - 110, entry, editor.input().empty() ? text_muted : text_primary);
+    draw_button(set_departure_left, top - 87, card_right - 156, top - 122, "Set DEP", true);
+    draw_button(card_right - 148, top - 87, card_right - 78, top - 122, "Set DEST", true);
+    draw_button(card_right - 70, top - 87, card_right, top - 122, "Add VIA");
+
+    constexpr int action_top_offset = 134;
+    constexpr int action_bottom_offset = 165;
+    draw_button(left, top - action_top_offset, left + 56, top - action_bottom_offset, "Up");
+    draw_button(left + 64, top - action_top_offset, left + 132, top - action_bottom_offset, "Down");
+    draw_button(left + 140, top - action_top_offset, left + 222, top - action_bottom_offset, "Remove");
+    draw_button(card_right - 158, top - action_top_offset, card_right - 84,
+                top - action_bottom_offset, "Cancel");
+    draw_button(card_right - 76, top - action_top_offset, card_right,
+                top - action_bottom_offset, "Apply", editor.dirty());
+
+    constexpr int row_height = 42;
+    constexpr int row_gap = 5;
+    const int row_start = top - 180;
+    const int available_height = std::max(row_height, row_start - (bottom + 48));
+    const std::size_t visible_count = std::min<std::size_t>(
+        editor.legs().size(), static_cast<std::size_t>(std::max(1, available_height / (row_height + row_gap))));
+    const std::size_t start = editor_visible_start(editor, visible_count);
+    int row_top = row_start;
+    for (std::size_t offset = 0; offset < visible_count; ++offset) {
+        const std::size_t index = start + offset;
+        const auto& leg = editor.legs()[index];
+        const bool selected = static_cast<int>(index) == editor.selected_index();
+        draw_rectangle(left, row_top, card_right, row_top - row_height,
+                       selected ? active_navigation : card);
+        if (selected) {
+            draw_border(left, row_top, card_right, row_top - row_height, accent, 1.0F);
+        }
+        draw_text(left + 12, row_top - 26,
+                  std::to_string(index + 1) + "  " + leg.identifier,
+                  selected ? accent : text_primary);
+        draw_text(left + 180, row_top - 26, format_leg_detail(leg), text_muted);
+        row_top -= row_height + row_gap;
+    }
+    if (editor.legs().empty()) {
+        draw_text(left + 12, row_start - 28,
+                  "Draft is empty. Add a departure airport or waypoint above.", text_muted);
+    } else if (visible_count < editor.legs().size()) {
+        draw_text(left + 12, bottom + 36,
+                  "Showing " + std::to_string(start + 1) + "-" +
+                      std::to_string(start + visible_count) + " of " +
+                      std::to_string(editor.legs().size()),
+                  text_muted);
+    }
+}
+
 void draw_flight_plan_page(const FlightPlanSnapshot& flight_plan,
-                           int left, int top, int right) {
+                           const FlightPlanEditor& editor,
+                           int left, int top, int right, int bottom) {
     const int card_right = std::max(left + 260, right - 28);
+    if (editor.active()) {
+        draw_flight_plan_editor(editor, left, top, right, bottom);
+        return;
+    }
     draw_text(left, top, "Flight Plan", text_primary, xplmFont_Basic);
+    draw_button(card_right - 82, top + 8, card_right, top - 23, "Edit", true);
 
     if (!flight_plan.available) {
         draw_text(left, top - 28, "Waiting for X-Plane FMS data...", text_muted);
@@ -199,14 +297,14 @@ void draw_flight_plan_page(const FlightPlanSnapshot& flight_plan,
     if (flight_plan.legs.empty()) {
         draw_text(left, top - 28, "No active route is loaded.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "X-Plane FMS", "Load or enter a flight plan to see it here");
+                  "X-Plane FMS", "Select Edit to create a route from waypoint identifiers");
         return;
     }
 
     const auto& first = flight_plan.legs.front();
     const auto& last = flight_plan.legs.back();
     char summary[128]{};
-    std::snprintf(summary, sizeof(summary), "%s to %s  |  %zu legs  |  Active %d",
+    std::snprintf(summary, sizeof(summary), "Departure %s  |  Destination %s  |  %zu legs  |  Active %d",
                   first.identifier.c_str(), last.identifier.c_str(), flight_plan.legs.size(),
                   flight_plan.active_leg_index >= 0 ? flight_plan.active_leg_index + 1 : 0);
     draw_text(left, top - 28, summary, text_muted);
@@ -593,6 +691,7 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
 
 void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                        const FlightPlanSnapshot& flight_plan,
+                       const FlightPlanEditor& flight_plan_editor,
                        const FuelSnapshot& fuel,
                        const RouteProgressSnapshot& route_progress,
                        const WeatherSnapshot& weather,
@@ -606,7 +705,7 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                       left, top, right, bottom);
         break;
     case EfbPage::flight_plan:
-        draw_flight_plan_page(flight_plan, left, top, right);
+        draw_flight_plan_page(flight_plan, flight_plan_editor, left, top, right, bottom);
         break;
     case EfbPage::progress:
         draw_progress_page(route_progress, left, top, right);
@@ -640,26 +739,29 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         draw_text(left, top, "About OpenEFB", text_primary, xplmFont_Basic);
         draw_text(left, top - 28, "An open-source electronic flight bag for X-Plane 12.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Version", "0.8.0 - M8 moving map");
+                  "Version", "0.9.0 - M9 flight-plan builder");
         draw_card(left, top - 178, card_right, top - 274,
                   "Project", "Built in the open for the flight-sim community");
         break;
     }
 
-    draw_text(left, bottom + 22, "OPEN EFB  /  M8", text_muted);
+    draw_text(left, bottom + 22, "OPEN EFB  /  M9", text_muted);
 }
 
 } // namespace
 
 std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, TelemetryModel& telemetry_model,
                                                     FlightPlanModel& flight_plan_model,
+                                                    FlightPlanEditor& flight_plan_editor,
+                                                    XPlaneFlightPlan& xplane_flight_plan,
                                                     FuelModel& fuel_model,
                                                     MovingMapModel& moving_map_model,
                                                     RouteProgressModel& route_progress_model,
                                                     WeatherModel& weather_model,
                                                     XPlanePreferences& preferences) {
     auto window = std::unique_ptr<XPlaneWindow>(
-        new XPlaneWindow(ui_model, telemetry_model, flight_plan_model, fuel_model, moving_map_model,
+        new XPlaneWindow(ui_model, telemetry_model, flight_plan_model, flight_plan_editor,
+                         xplane_flight_plan, fuel_model, moving_map_model,
                          route_progress_model,
                          weather_model, preferences));
     if (!window->window_id_) {
@@ -670,13 +772,16 @@ std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, Telemetry
 
 XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
                            FlightPlanModel& flight_plan_model,
+                           FlightPlanEditor& flight_plan_editor,
+                           XPlaneFlightPlan& xplane_flight_plan,
                            FuelModel& fuel_model,
                            MovingMapModel& moving_map_model,
                            RouteProgressModel& route_progress_model,
                            WeatherModel& weather_model,
                            XPlanePreferences& preferences)
     : ui_model_(ui_model), telemetry_model_(telemetry_model),
-      flight_plan_model_(flight_plan_model), fuel_model_(fuel_model),
+      flight_plan_model_(flight_plan_model), flight_plan_editor_(flight_plan_editor),
+      xplane_flight_plan_(xplane_flight_plan), fuel_model_(fuel_model),
       moving_map_model_(moving_map_model),
       route_progress_model_(route_progress_model),
       weather_model_(weather_model),
@@ -783,6 +888,7 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
     const int content_left = left + sidebar_width + 30;
     const int content_top = top - status_bar_height - 38;
     draw_page_content(ui_model_.active_page(), telemetry, flight_plan_model_.snapshot(),
+                      flight_plan_editor_,
                       fuel_model_.snapshot(), route_progress_model_.snapshot(),
                       weather_model_.snapshot(), moving_map_model_,
                       map_tiles_,
@@ -796,6 +902,107 @@ void XPlaneWindow::save_geometry() const {
     WindowGeometry geometry;
     XPLMGetWindowGeometry(window_id_, &geometry.left, &geometry.top, &geometry.right, &geometry.bottom);
     preferences_.save_geometry(geometry);
+}
+
+void XPlaneWindow::resolve_editor_waypoint(EditorPlacement placement) {
+    if (!flight_plan_editor_.active() || flight_plan_editor_.input().empty()) {
+        flight_plan_editor_.set_message("Type a waypoint identifier before selecting Add");
+        return;
+    }
+    double latitude = 0.0;
+    double longitude = 0.0;
+    const int selected = flight_plan_editor_.selected_index();
+    if (selected >= 0 && selected < static_cast<int>(flight_plan_editor_.legs().size())) {
+        latitude = flight_plan_editor_.legs()[selected].latitude_degrees;
+        longitude = flight_plan_editor_.legs()[selected].longitude_degrees;
+    } else if (telemetry_model_.snapshot().available) {
+        latitude = telemetry_model_.snapshot().latitude_degrees;
+        longitude = telemetry_model_.snapshot().longitude_degrees;
+    }
+    const std::string identifier(flight_plan_editor_.input());
+    auto waypoint = xplane_flight_plan_.find_waypoint(identifier, latitude, longitude);
+    if (!waypoint) {
+        flight_plan_editor_.set_message("Waypoint not found: " + identifier);
+        return;
+    }
+    if (placement != EditorPlacement::enroute && waypoint->kind != WaypointKind::airport) {
+        flight_plan_editor_.set_message(
+            std::string(placement == EditorPlacement::departure ? "Departure" : "Destination") +
+            " must be an airport identifier");
+        return;
+    }
+    bool changed = false;
+    std::string action;
+    switch (placement) {
+    case EditorPlacement::departure:
+        changed = flight_plan_editor_.set_departure(std::move(*waypoint));
+        action = "Departure set to ";
+        break;
+    case EditorPlacement::destination:
+        changed = flight_plan_editor_.set_destination(std::move(*waypoint));
+        action = "Destination set to ";
+        break;
+    case EditorPlacement::enroute:
+        changed = flight_plan_editor_.insert_after_selection(std::move(*waypoint));
+        action = "Added enroute waypoint ";
+        break;
+    }
+    if (!changed) {
+        flight_plan_editor_.set_message("The draft already contains X-Plane's maximum 100 legs");
+        return;
+    }
+    flight_plan_editor_.set_message(action + identifier);
+}
+
+void XPlaneWindow::apply_editor_route() {
+    if (!flight_plan_editor_.active()) {
+        return;
+    }
+    if (!flight_plan_editor_.dirty()) {
+        flight_plan_editor_.set_message("No draft changes to apply");
+        return;
+    }
+    if (!flight_plan_editor_.source_unchanged(flight_plan_model_.snapshot())) {
+        flight_plan_editor_.set_message(
+            "X-Plane's route changed while editing - Cancel and reopen the builder");
+        return;
+    }
+    const auto result = xplane_flight_plan_.apply_route(flight_plan_editor_.legs());
+    if (!result.success) {
+        flight_plan_editor_.set_message(result.message);
+        return;
+    }
+    flight_plan_editor_.mark_applied(flight_plan_model_.snapshot());
+}
+
+void XPlaneWindow::handle_editor_key(char key, char virtual_key) {
+    if (!flight_plan_editor_.active()) {
+        return;
+    }
+    switch (static_cast<unsigned char>(virtual_key)) {
+    case XPLM_VK_ESCAPE:
+        flight_plan_editor_.cancel();
+        XPLMTakeKeyboardFocus(nullptr);
+        return;
+    case XPLM_VK_BACK:
+        flight_plan_editor_.backspace_input();
+        return;
+    case XPLM_VK_RETURN:
+        resolve_editor_waypoint(EditorPlacement::enroute);
+        return;
+    case XPLM_VK_UP:
+        flight_plan_editor_.select(flight_plan_editor_.selected_index() - 1);
+        return;
+    case XPLM_VK_DOWN:
+        flight_plan_editor_.select(flight_plan_editor_.selected_index() + 1);
+        return;
+    case XPLM_VK_DELETE:
+        flight_plan_editor_.remove_selected();
+        return;
+    default:
+        flight_plan_editor_.append_input(key);
+        return;
+    }
 }
 
 void XPlaneWindow::draw(XPLMWindowID window_id, void* refcon) {
@@ -815,6 +1022,75 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
     int right{};
     int bottom{};
     XPLMGetWindowGeometry(window_id, &left, &top, &right, &bottom);
+    if (window->ui_model_.active_page() == EfbPage::flight_plan) {
+        const int content_left = left + sidebar_width + 30;
+        const int content_top = top - status_bar_height - 38;
+        const int card_right = std::max(content_left + 420, right - 28);
+        if (!window->flight_plan_editor_.active()) {
+            if (x >= card_right - 82 && x <= card_right &&
+                y <= content_top + 8 && y >= content_top - 23 &&
+                window->flight_plan_editor_.begin(window->flight_plan_model_.snapshot())) {
+                XPLMTakeKeyboardFocus(window_id);
+                return 1;
+            }
+        } else {
+            XPLMTakeKeyboardFocus(window_id);
+            if (y <= content_top - 87 && y >= content_top - 122) {
+                if (x >= card_right - 226 && x <= card_right - 156) {
+                    window->resolve_editor_waypoint(EditorPlacement::departure);
+                    return 1;
+                }
+                if (x >= card_right - 148 && x <= card_right - 78) {
+                    window->resolve_editor_waypoint(EditorPlacement::destination);
+                    return 1;
+                }
+                if (x >= card_right - 70 && x <= card_right) {
+                    window->resolve_editor_waypoint(EditorPlacement::enroute);
+                    return 1;
+                }
+            }
+            if (y <= content_top - 134 && y >= content_top - 165) {
+                if (x >= content_left && x <= content_left + 56) {
+                    window->flight_plan_editor_.move_selected_up();
+                    return 1;
+                }
+                if (x >= content_left + 64 && x <= content_left + 132) {
+                    window->flight_plan_editor_.move_selected_down();
+                    return 1;
+                }
+                if (x >= content_left + 140 && x <= content_left + 222) {
+                    window->flight_plan_editor_.remove_selected();
+                    return 1;
+                }
+                if (x >= card_right - 158 && x <= card_right - 84) {
+                    window->flight_plan_editor_.cancel();
+                    XPLMTakeKeyboardFocus(nullptr);
+                    return 1;
+                }
+                if (x >= card_right - 76 && x <= card_right) {
+                    window->apply_editor_route();
+                    return 1;
+                }
+            }
+            constexpr int row_height = 42;
+            constexpr int row_gap = 5;
+            const int row_start = content_top - 180;
+            const int available_height = std::max(row_height, row_start - (bottom + 48));
+            const std::size_t visible_count = std::min<std::size_t>(
+                window->flight_plan_editor_.legs().size(),
+                static_cast<std::size_t>(std::max(1, available_height / (row_height + row_gap))));
+            const std::size_t start = editor_visible_start(window->flight_plan_editor_, visible_count);
+            int row_top = row_start;
+            for (std::size_t offset = 0; offset < visible_count; ++offset) {
+                if (x >= content_left && x <= card_right &&
+                    y <= row_top && y >= row_top - row_height) {
+                    window->flight_plan_editor_.select(static_cast<int>(start + offset));
+                    return 1;
+                }
+                row_top -= row_height + row_gap;
+            }
+        }
+    }
     if (window->ui_model_.active_page() == EfbPage::home) {
         const int content_left = left + sidebar_width + 30;
         const int content_top = top - status_bar_height - 38;
@@ -838,7 +1114,14 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
     return 1;
 }
 
-void XPlaneWindow::handle_key(XPLMWindowID, char, XPLMKeyFlags, char, void*, int) {}
+void XPlaneWindow::handle_key(XPLMWindowID, char key, XPLMKeyFlags flags, char virtual_key,
+                              void* refcon, int losing_focus) {
+    auto* window = static_cast<XPlaneWindow*>(refcon);
+    if (window && !losing_focus && (flags & xplm_DownFlag) != 0 &&
+        window->ui_model_.active_page() == EfbPage::flight_plan) {
+        window->handle_editor_key(key, virtual_key);
+    }
+}
 
 XPLMCursorStatus XPlaneWindow::handle_cursor(XPLMWindowID, int, int, void*) {
     return xplm_CursorDefault;
@@ -846,7 +1129,7 @@ XPLMCursorStatus XPlaneWindow::handle_cursor(XPLMWindowID, int, int, void*) {
 
 int XPlaneWindow::handle_wheel(XPLMWindowID window_id, int x, int y, int, int clicks, void* refcon) {
     auto* window = static_cast<XPlaneWindow*>(refcon);
-    if (!window || window->ui_model_.active_page() != EfbPage::home) {
+    if (!window) {
         return 0;
     }
     int left{};
@@ -854,6 +1137,26 @@ int XPlaneWindow::handle_wheel(XPLMWindowID window_id, int x, int y, int, int cl
     int right{};
     int bottom{};
     XPLMGetWindowGeometry(window_id, &left, &top, &right, &bottom);
+    if (window->ui_model_.active_page() == EfbPage::flight_plan &&
+        window->flight_plan_editor_.active()) {
+        const int content_left = left + sidebar_width + 30;
+        const int content_top = top - status_bar_height - 38;
+        if (x < content_left || x > right - 28 || y > content_top || y < bottom + 40) {
+            return 0;
+        }
+        int selected = window->flight_plan_editor_.selected_index();
+        const int direction = clicks < 0 ? 1 : -1;
+        for (int count = std::abs(clicks); count > 0; --count) {
+            if (!window->flight_plan_editor_.select(selected + direction)) {
+                break;
+            }
+            selected += direction;
+        }
+        return 1;
+    }
+    if (window->ui_model_.active_page() != EfbPage::home) {
+        return 0;
+    }
     const int content_left = left + sidebar_width + 30;
     const int content_top = top - status_bar_height - 38;
     const auto panel = home_map_geometry(content_left, content_top, right, bottom);

@@ -1,5 +1,6 @@
 #include "openefb/core/application.hpp"
 #include "openefb/core/flight_plan_model.hpp"
+#include "openefb/core/flight_plan_editor.hpp"
 #include "openefb/core/fuel_model.hpp"
 #include "openefb/core/moving_map_model.hpp"
 #include "openefb/core/route_progress_model.hpp"
@@ -148,6 +149,62 @@ int main() {
             "out-of-range active legs are safely cleared");
     flight_plan_model.mark_unavailable();
     require(!flight_plan_model.snapshot().available, "flight plan can be marked unavailable");
+
+    openefb::FlightPlanEditor flight_plan_editor;
+    require(!flight_plan_editor.begin(flight_plan_model.snapshot()),
+            "editor rejects an unavailable route");
+    flight_plan_model.update(flight_plan);
+    require(flight_plan_editor.begin(flight_plan_model.snapshot()),
+            "editor starts from the live route");
+    require(flight_plan_editor.legs().size() == 3 && !flight_plan_editor.dirty(),
+            "a new draft preserves route legs without becoming dirty");
+    require(flight_plan_editor.append_input('p') && flight_plan_editor.append_input('d') &&
+                flight_plan_editor.input() == "PD",
+            "waypoint entry normalizes identifiers to uppercase");
+    require(!flight_plan_editor.append_input('-'), "waypoint entry rejects punctuation");
+    openefb::FlightPlanLeg new_leg{0, "KPDX", openefb::WaypointKind::airport,
+                                   3000, 45.589, -122.597, false};
+    require(flight_plan_editor.insert_after_selection(new_leg),
+            "a resolved waypoint is inserted after the selection");
+    require(flight_plan_editor.selected_index() == 1 && flight_plan_editor.dirty(),
+            "inserted waypoint becomes selected and marks the draft dirty");
+    require(flight_plan_editor.move_selected_down() && flight_plan_editor.selected_index() == 2,
+            "selected waypoint can move down");
+    require(flight_plan_editor.move_selected_up() && flight_plan_editor.selected_index() == 1,
+            "selected waypoint can move up");
+    require(flight_plan_editor.remove_selected() && flight_plan_editor.legs().size() == 3,
+            "selected waypoint can be removed");
+    require(flight_plan_editor.source_unchanged(flight_plan_model.snapshot()),
+            "unchanged live routes remain safe to apply");
+    auto externally_changed_route = flight_plan_model.snapshot();
+    externally_changed_route.legs.pop_back();
+    require(!flight_plan_editor.source_unchanged(externally_changed_route),
+            "external route changes are detected before apply");
+    flight_plan_editor.cancel();
+    require(!flight_plan_editor.active(), "cancel closes and clears the route draft");
+
+    openefb::FlightPlanSnapshot empty_route;
+    empty_route.available = true;
+    openefb::FlightPlanEditor endpoint_editor;
+    require(endpoint_editor.begin(empty_route), "an empty live route can open the builder");
+    const openefb::FlightPlanLeg departure_leg{0, "KSEA", openefb::WaypointKind::airport,
+                                                0, 47.449, -122.309, false};
+    const openefb::FlightPlanLeg destination_leg{0, "KPDX", openefb::WaypointKind::airport,
+                                                  0, 45.589, -122.597, false};
+    require(endpoint_editor.set_destination(destination_leg) &&
+                endpoint_editor.destination()->identifier == "KPDX" &&
+                endpoint_editor.departure() == nullptr,
+            "destination can be assigned before departure");
+    require(endpoint_editor.set_departure(departure_leg) &&
+                endpoint_editor.departure()->identifier == "KSEA" &&
+                endpoint_editor.destination()->identifier == "KPDX",
+            "departure and destination remain explicit endpoints");
+    const openefb::FlightPlanLeg enroute_leg{0, "BTG", openefb::WaypointKind::vor,
+                                              0, 45.748, -122.592, false};
+    require(endpoint_editor.insert_after_selection(enroute_leg) &&
+                endpoint_editor.legs()[1].identifier == "BTG" &&
+                endpoint_editor.legs().back().identifier == "KPDX",
+            "enroute additions stay before the assigned destination");
 
     openefb::WeatherModel weather_model;
     require(!weather_model.snapshot().available, "weather starts unavailable");

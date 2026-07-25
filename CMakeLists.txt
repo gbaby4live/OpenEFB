@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(OpenEFB VERSION 0.8.0 LANGUAGES CXX)
+project(OpenEFB VERSION 0.9.0 LANGUAGES CXX)
 
 option(OPEN_EFB_BUILD_TESTS "Build OpenEFB unit tests" ON)
 set(OPEN_EFB_XPLANE_SDK_PATH "" CACHE PATH "Path to the X-Plane SDK root")
@@ -12,6 +12,7 @@ endif()
 add_library(openefb_core STATIC
     src/core/application.cpp
     src/core/flight_plan_model.cpp
+    src/core/flight_plan_editor.cpp
     src/core/fuel_model.cpp
     src/core/moving_map_model.cpp
     src/core/route_progress_model.cpp

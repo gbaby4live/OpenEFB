@@ -39,7 +39,7 @@ After installing the built `OpenEFB` plugin package, open it from:
 For a local Windows build, copy the generated `build/OpenEFB` directory into
 `X-Plane 12/Resources/plugins` before starting the simulator.
 
-The M8 shell provides a dark tablet layout with a live UTC status bar and eight
+The M9 shell provides a dark tablet layout with a live UTC status bar and eight
 mouse-selectable pages: Home, Flight Plan, Progress, Weather, Fuel, Aircraft,
 Settings, and About. Window position and size are saved in X-Plane's
 preferences directory. Home and Aircraft display
@@ -68,6 +68,14 @@ are loaded in the background, cached locally, and credited inside the map;
 aircraft and fuel summaries remain visible below the panel. Internet access is
 required for tiles not already cached. The native tile adapter for macOS and
 Linux is planned; those builds currently retain the vector map fallback.
+
+Flight Plan now includes an interactive builder with clearly labeled Departure
+and Destination fields. Select Edit, type an exact airport identifier, and use
+Set DEP or Set DEST. Fixes, VORs, and NDBs can be inserted with Add VIA. Select
+draft legs with the mouse, arrow keys, or mouse wheel; use Up, Down, and Remove
+to arrange the enroute portion. Changes remain isolated from X-Plane until
+Apply is selected. OpenEFB validates all identifiers first and refuses to
+overwrite the FMS if its live route changed after the draft was opened.
 
 See [docs/architecture.md](docs/architecture.md) for architectural boundaries
 and threading invariants, and [docs/product-roadmap.md](docs/product-roadmap.md)

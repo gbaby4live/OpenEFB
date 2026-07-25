@@ -1,5 +1,6 @@
 #include "openefb/core/application.hpp"
 #include "openefb/core/flight_plan_model.hpp"
+#include "openefb/core/flight_plan_editor.hpp"
 #include "openefb/core/fuel_model.hpp"
 #include "openefb/core/moving_map_model.hpp"
 #include "openefb/core/route_progress_model.hpp"
@@ -34,6 +35,7 @@ struct PluginRuntime {
           ui_model(),
           telemetry_model(),
           flight_plan_model(),
+          flight_plan_editor(),
           fuel_model(),
           moving_map_model(),
           route_progress_model(),
@@ -46,7 +48,8 @@ struct PluginRuntime {
           weather(weather_model, flight_plan_model),
           window_controller([this] {
               return openefb::xplane::XPlaneWindow::create(
-                  ui_model, telemetry_model, flight_plan_model, fuel_model, moving_map_model,
+                  ui_model, telemetry_model, flight_plan_model, flight_plan_editor, flight_plan,
+                  fuel_model, moving_map_model,
                   route_progress_model,
                   weather_model, preferences);
           }),
@@ -70,6 +73,7 @@ struct PluginRuntime {
     openefb::UiModel ui_model;
     openefb::TelemetryModel telemetry_model;
     openefb::FlightPlanModel flight_plan_model;
+    openefb::FlightPlanEditor flight_plan_editor;
     openefb::FuelModel fuel_model;
     openefb::MovingMapModel moving_map_model;
     openefb::RouteProgressModel route_progress_model;

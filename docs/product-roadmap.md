@@ -14,11 +14,11 @@ original open-source code and visuals.
 - M7: fuel quantity, GPH, endurance, and estimated range
 - M8: bordered Home moving map with OpenStreetMap Street/Topo basemaps,
   route overlay, and zoom
+- M9: interactive flight-plan creation and editing with X-Plane waypoint
+  lookup, add/remove/reorder controls, draft safety, and explicit FMS Apply
 
 ## Planned operational workflow
 
-- M9: interactive flight-plan creation and editing, including waypoint search,
-  add/remove/reorder actions, and safe synchronization with the X-Plane FMS
 - M10: airport, runway, frequency, and procedure browsing
 - M11: operational map overlays for weather, airports, navaids, and airspace
 - M12: aircraft-aware weight and balance, fuel planning, and performance tools

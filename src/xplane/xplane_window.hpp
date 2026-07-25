@@ -1,6 +1,7 @@
 #pragma once
 
 #include "openefb/core/flight_plan_model.hpp"
+#include "openefb/core/flight_plan_editor.hpp"
 #include "openefb/core/fuel_model.hpp"
 #include "openefb/core/moving_map_model.hpp"
 #include "openefb/core/route_progress_model.hpp"
@@ -10,6 +11,7 @@
 #include "openefb/core/weather_model.hpp"
 #include "xplane_preferences.hpp"
 #include "xplane_map_tiles.hpp"
+#include "xplane_flight_plan.hpp"
 
 #include <XPLMDisplay.h>
 
@@ -21,6 +23,8 @@ class XPlaneWindow final : public WindowSurface {
 public:
     static std::unique_ptr<WindowSurface> create(UiModel& ui_model, TelemetryModel& telemetry_model,
                                                  FlightPlanModel& flight_plan_model,
+                                                 FlightPlanEditor& flight_plan_editor,
+                                                 XPlaneFlightPlan& xplane_flight_plan,
                                                  FuelModel& fuel_model,
                                                  MovingMapModel& moving_map_model,
                                                  RouteProgressModel& route_progress_model,
@@ -37,8 +41,15 @@ public:
     [[nodiscard]] bool visible() const override;
 
 private:
+    enum class EditorPlacement {
+        departure,
+        destination,
+        enroute,
+    };
+
     XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
-                 FlightPlanModel& flight_plan_model, FuelModel& fuel_model,
+                 FlightPlanModel& flight_plan_model, FlightPlanEditor& flight_plan_editor,
+                 XPlaneFlightPlan& xplane_flight_plan, FuelModel& fuel_model,
                  MovingMapModel& moving_map_model,
                  RouteProgressModel& route_progress_model,
                  WeatherModel& weather_model,
@@ -46,6 +57,9 @@ private:
 
     void render(XPLMWindowID window_id) const;
     void save_geometry() const;
+    void resolve_editor_waypoint(EditorPlacement placement);
+    void apply_editor_route();
+    void handle_editor_key(char key, char virtual_key);
 
     static void draw(XPLMWindowID window_id, void* refcon);
     static int handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseStatus status, void* refcon);
@@ -57,6 +71,8 @@ private:
     UiModel& ui_model_;
     TelemetryModel& telemetry_model_;
     FlightPlanModel& flight_plan_model_;
+    FlightPlanEditor& flight_plan_editor_;
+    XPlaneFlightPlan& xplane_flight_plan_;
     FuelModel& fuel_model_;
     MovingMapModel& moving_map_model_;
     RouteProgressModel& route_progress_model_;

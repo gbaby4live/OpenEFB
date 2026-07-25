@@ -4,8 +4,12 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
+#include <cmath>
+#include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace openefb::xplane {
 
@@ -13,6 +17,15 @@ namespace {
 
 constexpr float sample_interval_seconds = 1.0F;
 constexpr int maximum_fms_entries = 100;
+constexpr XPLMNavType editable_waypoint_types =
+    xplm_Nav_Airport | xplm_Nav_NDB | xplm_Nav_VOR | xplm_Nav_Fix;
+
+std::string uppercase(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
+        return static_cast<char>(std::toupper(character));
+    });
+    return value;
+}
 
 WaypointKind waypoint_kind(XPLMNavType type) {
     if (type & xplm_Nav_Airport) {
@@ -66,6 +79,100 @@ void XPlaneFlightPlan::stop() {
         flight_loop_id_ = nullptr;
     }
     model_.mark_unavailable();
+}
+
+void XPlaneFlightPlan::refresh() { sample(); }
+
+std::optional<FlightPlanLeg> XPlaneFlightPlan::find_waypoint(
+    std::string identifier, double near_latitude, double near_longitude) const {
+    identifier = uppercase(std::move(identifier));
+    if (identifier.empty() || !std::isfinite(near_latitude) || !std::isfinite(near_longitude)) {
+        return std::nullopt;
+    }
+    float latitude = static_cast<float>(near_latitude);
+    float longitude = static_cast<float>(near_longitude);
+    const XPLMNavRef reference = XPLMFindNavAid(nullptr, identifier.c_str(), &latitude, &longitude,
+                                                nullptr, editable_waypoint_types);
+    if (reference == XPLM_NAV_NOT_FOUND) {
+        return std::nullopt;
+    }
+    XPLMNavType type{xplm_Nav_Unknown};
+    std::array<char, 256> found_identifier{};
+    float found_latitude{};
+    float found_longitude{};
+    XPLMGetNavAidInfo(reference, &type, &found_latitude, &found_longitude, nullptr, nullptr,
+                      nullptr, found_identifier.data(), nullptr, nullptr);
+    if (uppercase(found_identifier.data()) != identifier) {
+        return std::nullopt;
+    }
+    FlightPlanLeg leg;
+    leg.identifier = identifier;
+    leg.kind = waypoint_kind(type);
+    leg.latitude_degrees = found_latitude;
+    leg.longitude_degrees = found_longitude;
+    return leg;
+}
+
+FlightPlanEditResult XPlaneFlightPlan::apply_route(const std::vector<FlightPlanLeg>& legs) {
+    if (legs.size() > maximum_fms_entries) {
+        return {false, "Route exceeds X-Plane's 100-waypoint limit"};
+    }
+    struct ResolvedEntry {
+        bool coordinate{false};
+        XPLMNavRef reference{XPLM_NAV_NOT_FOUND};
+        float latitude{};
+        float longitude{};
+        int altitude{};
+    };
+    std::vector<ResolvedEntry> resolved;
+    resolved.reserve(legs.size());
+    for (const auto& leg : legs) {
+        ResolvedEntry entry;
+        entry.altitude = leg.altitude_feet;
+        if (leg.kind == WaypointKind::coordinate) {
+            entry.coordinate = true;
+            entry.latitude = static_cast<float>(leg.latitude_degrees);
+            entry.longitude = static_cast<float>(leg.longitude_degrees);
+        } else {
+            float latitude = static_cast<float>(leg.latitude_degrees);
+            float longitude = static_cast<float>(leg.longitude_degrees);
+            entry.reference = XPLMFindNavAid(nullptr, leg.identifier.c_str(), &latitude, &longitude,
+                                             nullptr, editable_waypoint_types);
+            if (entry.reference == XPLM_NAV_NOT_FOUND) {
+                return {false, "Waypoint no longer exists: " + leg.identifier};
+            }
+            std::array<char, 256> found_identifier{};
+            XPLMGetNavAidInfo(entry.reference, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+                              found_identifier.data(), nullptr, nullptr);
+            if (uppercase(found_identifier.data()) != uppercase(leg.identifier)) {
+                return {false, "Waypoint could not be resolved exactly: " + leg.identifier};
+            }
+        }
+        resolved.push_back(entry);
+    }
+
+    const int previous_count = std::clamp(XPLMCountFMSEntries(), 0, maximum_fms_entries);
+    const int previous_destination = XPLMGetDestinationFMSEntry();
+    const int previous_displayed = XPLMGetDisplayedFMSEntry();
+    for (std::size_t index = 0; index < resolved.size(); ++index) {
+        const auto& entry = resolved[index];
+        if (entry.coordinate) {
+            XPLMSetFMSEntryLatLon(static_cast<int>(index), entry.latitude, entry.longitude,
+                                  entry.altitude);
+        } else {
+            XPLMSetFMSEntryInfo(static_cast<int>(index), entry.reference, entry.altitude);
+        }
+    }
+    for (int index = previous_count - 1; index >= static_cast<int>(resolved.size()); --index) {
+        XPLMClearFMSEntry(index);
+    }
+    if (!resolved.empty()) {
+        const int last_index = static_cast<int>(resolved.size()) - 1;
+        XPLMSetDisplayedFMSEntry(std::clamp(previous_displayed, 0, last_index));
+        XPLMSetDestinationFMSEntry(std::clamp(previous_destination, 0, last_index));
+    }
+    sample();
+    return {true, "Route applied to X-Plane FMS"};
 }
 
 void XPlaneFlightPlan::sample() {

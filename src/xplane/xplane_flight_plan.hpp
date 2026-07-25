@@ -4,7 +4,16 @@
 
 #include <XPLMProcessing.h>
 
+#include <optional>
+#include <string>
+#include <vector>
+
 namespace openefb::xplane {
+
+struct FlightPlanEditResult {
+    bool success{false};
+    std::string message;
+};
 
 class XPlaneFlightPlan final {
 public:
@@ -16,6 +25,11 @@ public:
 
     bool start();
     void stop();
+    void refresh();
+
+    [[nodiscard]] std::optional<FlightPlanLeg> find_waypoint(
+        std::string identifier, double near_latitude, double near_longitude) const;
+    [[nodiscard]] FlightPlanEditResult apply_route(const std::vector<FlightPlanLeg>& legs);
 
 private:
     void sample();
