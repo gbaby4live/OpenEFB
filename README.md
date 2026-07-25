@@ -39,16 +39,19 @@ After installing the built `OpenEFB` plugin package, open it from:
 For a local Windows build, copy the generated `build/OpenEFB` directory into
 `X-Plane 12/Resources/plugins` before starting the simulator.
 
-The M5 shell provides a dark tablet layout with a live UTC status bar and six
-mouse-selectable pages: Home, Flight Plan, Weather, Aircraft, Settings, and About. Window position and
-size are saved in X-Plane's preferences directory. Home and Aircraft display
+The M6 shell provides a dark tablet layout with a live UTC status bar and seven
+mouse-selectable pages: Home, Flight Plan, Progress, Weather, Aircraft,
+Settings, and About. Window position and size are saved in X-Plane's
+preferences directory. Home and Aircraft display
 live aircraft identity, position, altitude, ground speed, heading, and vertical
 speed sampled from X-Plane at 5 Hz. High-contrast text and an enforced minimum
 window size keep telemetry cards legible without overlapping. Flight Plan reads
 the active X-Plane FMS route once per second and highlights the leg currently
 being flown. Weather displays the latest downloaded METAR for the first and last
-airports in that route, refreshing every 15 seconds. Its window resource is
-created on first use and released whenever the plugin is disabled or stopped.
+airports in that route, refreshing every 15 seconds. Progress calculates direct
+distance, true bearing, and estimated time to the active waypoint and destination
+from live aircraft groundspeed. The window resource is created on first use and
+released whenever the plugin is disabled or stopped.
 
 See [docs/architecture.md](docs/architecture.md) for architectural boundaries
 and threading invariants.

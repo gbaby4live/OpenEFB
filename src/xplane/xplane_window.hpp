@@ -1,6 +1,7 @@
 #pragma once
 
 #include "openefb/core/flight_plan_model.hpp"
+#include "openefb/core/route_progress_model.hpp"
 #include "openefb/core/ui_model.hpp"
 #include "openefb/core/telemetry_model.hpp"
 #include "openefb/core/window_controller.hpp"
@@ -17,6 +18,7 @@ class XPlaneWindow final : public WindowSurface {
 public:
     static std::unique_ptr<WindowSurface> create(UiModel& ui_model, TelemetryModel& telemetry_model,
                                                  FlightPlanModel& flight_plan_model,
+                                                 RouteProgressModel& route_progress_model,
                                                  WeatherModel& weather_model,
                                                  XPlanePreferences& preferences);
 
@@ -31,7 +33,8 @@ public:
 
 private:
     XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
-                 FlightPlanModel& flight_plan_model, WeatherModel& weather_model,
+                 FlightPlanModel& flight_plan_model, RouteProgressModel& route_progress_model,
+                 WeatherModel& weather_model,
                  XPlanePreferences& preferences);
 
     void render(XPLMWindowID window_id) const;
@@ -47,6 +50,7 @@ private:
     UiModel& ui_model_;
     TelemetryModel& telemetry_model_;
     FlightPlanModel& flight_plan_model_;
+    RouteProgressModel& route_progress_model_;
     WeatherModel& weather_model_;
     XPlanePreferences& preferences_;
     XPLMWindowID window_id_{nullptr};

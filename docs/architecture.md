@@ -72,3 +72,14 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
   the X-Plane SDK and remains strictly read-only.
 - The Weather page wraps reports into high-contrast route cards and explains
   empty reports when Real Weather data is unavailable.
+
+## M6: route progress
+
+- `RouteProgressModel` derives great-circle distance, initial true bearing, and
+  groundspeed-based ETE from simulator-independent telemetry and route snapshots.
+- `XPlaneRouteProgress` refreshes derived progress once per second without
+  resolving additional datarefs or performing calculations in the draw callback.
+- ETE is withheld below one knot to avoid misleading estimates while parked;
+  distance and bearing remain available whenever route coordinates are valid.
+- The Progress page separates the active waypoint from the final destination
+  and states that estimates use direct distance and current groundspeed.

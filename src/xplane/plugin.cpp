@@ -1,5 +1,6 @@
 #include "openefb/core/application.hpp"
 #include "openefb/core/flight_plan_model.hpp"
+#include "openefb/core/route_progress_model.hpp"
 #include "openefb/core/ui_model.hpp"
 #include "openefb/core/telemetry_model.hpp"
 #include "openefb/core/weather_model.hpp"
@@ -7,6 +8,7 @@
 #include "xplane_flight_plan.hpp"
 #include "xplane_menu.hpp"
 #include "xplane_preferences.hpp"
+#include "xplane_route_progress.hpp"
 #include "xplane_telemetry.hpp"
 #include "xplane_weather.hpp"
 #include "xplane_window.hpp"
@@ -29,14 +31,17 @@ struct PluginRuntime {
           ui_model(),
           telemetry_model(),
           flight_plan_model(),
+          route_progress_model(),
           weather_model(),
           preferences(),
           telemetry(telemetry_model),
           flight_plan(flight_plan_model),
+          route_progress(route_progress_model, telemetry_model, flight_plan_model),
           weather(weather_model, flight_plan_model),
           window_controller([this] {
               return openefb::xplane::XPlaneWindow::create(
-                  ui_model, telemetry_model, flight_plan_model, weather_model, preferences);
+                  ui_model, telemetry_model, flight_plan_model, route_progress_model,
+                  weather_model, preferences);
           }),
           menu([this] { toggle_window(); }) {}
 
@@ -58,10 +63,12 @@ struct PluginRuntime {
     openefb::UiModel ui_model;
     openefb::TelemetryModel telemetry_model;
     openefb::FlightPlanModel flight_plan_model;
+    openefb::RouteProgressModel route_progress_model;
     openefb::WeatherModel weather_model;
     openefb::xplane::XPlanePreferences preferences;
     openefb::xplane::XPlaneTelemetry telemetry;
     openefb::xplane::XPlaneFlightPlan flight_plan;
+    openefb::xplane::XPlaneRouteProgress route_progress;
     openefb::xplane::XPlaneWeather weather;
     openefb::WindowController window_controller;
     openefb::xplane::XPlaneMenu menu;
@@ -98,9 +105,10 @@ PLUGIN_API int XPluginStart(char* out_name, char* out_signature, char* out_descr
 
 PLUGIN_API void XPluginStop() {
     if (runtime) {
-        runtime->telemetry.stop();
         runtime->weather.stop();
+        runtime->route_progress.stop();
         runtime->flight_plan.stop();
+        runtime->telemetry.stop();
         runtime->window_controller.reset();
         runtime->application.stop();
         runtime.reset();
@@ -117,6 +125,9 @@ PLUGIN_API int XPluginEnable() {
     if (!runtime->flight_plan.start()) {
         PluginRuntime::xplane_log("flight plan unavailable");
     }
+    if (!runtime->route_progress.start()) {
+        PluginRuntime::xplane_log("route progress unavailable");
+    }
     if (!runtime->weather.start()) {
         PluginRuntime::xplane_log("weather unavailable");
     }
@@ -125,9 +136,10 @@ PLUGIN_API int XPluginEnable() {
 
 PLUGIN_API void XPluginDisable() {
     if (runtime) {
-        runtime->telemetry.stop();
         runtime->weather.stop();
+        runtime->route_progress.stop();
         runtime->flight_plan.stop();
+        runtime->telemetry.stop();
         runtime->window_controller.reset();
         runtime->application.disable();
     }

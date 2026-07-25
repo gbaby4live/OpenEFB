@@ -244,8 +244,53 @@ void draw_weather_page(const WeatherSnapshot& weather, int left, int top, int ri
     draw_weather_card(left, top - 212, card_right, "Destination", weather.destination);
 }
 
+std::string format_ete(const RouteProgressPoint& progress) {
+    if (!progress.ete_available) {
+        return "ETE unavailable below 1 kt groundspeed";
+    }
+    const int total_minutes = std::max(0, static_cast<int>(std::lround(progress.ete_minutes)));
+    if (total_minutes >= 60) {
+        return "ETE " + std::to_string(total_minutes / 60) + " hr " +
+               std::to_string(total_minutes % 60) + " min";
+    }
+    return "ETE " + std::to_string(total_minutes) + " min";
+}
+
+void draw_progress_card(int left, int top, int right, std::string_view role,
+                        const RouteProgressPoint& progress) {
+    draw_rectangle(left, top, right, top - 112, card);
+    draw_text(left + 18, top - 29, role, text_primary);
+    if (!progress.available) {
+        draw_text(left + 18, top - 61, "No route point is currently available", text_muted);
+        return;
+    }
+
+    char navigation[112]{};
+    std::snprintf(navigation, sizeof(navigation), "%s  |  %.1f NM  |  %03d deg true",
+                  progress.identifier.c_str(), progress.distance_nm,
+                  static_cast<int>(std::lround(progress.bearing_degrees)) % 360);
+    draw_text(left + 18, top - 58, navigation, accent);
+    draw_text(left + 18, top - 84, format_ete(progress), text_muted);
+}
+
+void draw_progress_page(const RouteProgressSnapshot& progress, int left, int top, int right) {
+    const int card_right = std::max(left + 260, right - 28);
+    draw_text(left, top, "Route Progress", text_primary, xplmFont_Basic);
+    draw_text(left, top - 28, "Live great-circle estimates from aircraft position and groundspeed", text_muted);
+    if (!progress.available) {
+        draw_card(left, top - 62, card_right, top - 158,
+                  "Progress status", "Load a route and wait for live aircraft data");
+        return;
+    }
+    draw_progress_card(left, top - 62, card_right, "Active waypoint", progress.active_waypoint);
+    draw_progress_card(left, top - 192, card_right, "Destination", progress.destination);
+    draw_card(left, top - 322, card_right, top - 406,
+              "Estimate basis", "Direct distance and current groundspeed");
+}
+
 void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                        const FlightPlanSnapshot& flight_plan,
+                       const RouteProgressSnapshot& route_progress,
                        const WeatherSnapshot& weather,
                        int left, int top, int right, int bottom) {
     const int card_right = std::max(left + 260, right - 28);
@@ -263,6 +308,9 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         break;
     case EfbPage::flight_plan:
         draw_flight_plan_page(flight_plan, left, top, right);
+        break;
+    case EfbPage::progress:
+        draw_progress_page(route_progress, left, top, right);
         break;
     case EfbPage::weather:
         draw_weather_page(weather, left, top, right);
@@ -290,23 +338,25 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         draw_text(left, top, "About OpenEFB", text_primary, xplmFont_Basic);
         draw_text(left, top - 28, "An open-source electronic flight bag for X-Plane 12.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Version", "0.5.0 - M5 route weather");
+                  "Version", "0.6.0 - M6 route progress");
         draw_card(left, top - 178, card_right, top - 274,
                   "Project", "Built in the open for the flight-sim community");
         break;
     }
 
-    draw_text(left, bottom + 22, "OPEN EFB  /  M5", text_muted);
+    draw_text(left, bottom + 22, "OPEN EFB  /  M6", text_muted);
 }
 
 } // namespace
 
 std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, TelemetryModel& telemetry_model,
                                                     FlightPlanModel& flight_plan_model,
+                                                    RouteProgressModel& route_progress_model,
                                                     WeatherModel& weather_model,
                                                     XPlanePreferences& preferences) {
     auto window = std::unique_ptr<XPlaneWindow>(
-        new XPlaneWindow(ui_model, telemetry_model, flight_plan_model, weather_model, preferences));
+        new XPlaneWindow(ui_model, telemetry_model, flight_plan_model, route_progress_model,
+                         weather_model, preferences));
     if (!window->window_id_) {
         return nullptr;
     }
@@ -315,10 +365,12 @@ std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, Telemetry
 
 XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
                            FlightPlanModel& flight_plan_model,
+                           RouteProgressModel& route_progress_model,
                            WeatherModel& weather_model,
                            XPlanePreferences& preferences)
     : ui_model_(ui_model), telemetry_model_(telemetry_model),
-      flight_plan_model_(flight_plan_model), weather_model_(weather_model),
+      flight_plan_model_(flight_plan_model), route_progress_model_(route_progress_model),
+      weather_model_(weather_model),
       preferences_(preferences) {
     WindowGeometry geometry;
     if (const auto stored = preferences_.load_geometry()) {
@@ -422,7 +474,7 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
     const int content_left = left + sidebar_width + 30;
     const int content_top = top - status_bar_height - 38;
     draw_page_content(ui_model_.active_page(), telemetry, flight_plan_model_.snapshot(),
-                      weather_model_.snapshot(),
+                      route_progress_model_.snapshot(), weather_model_.snapshot(),
                       content_left, content_top, right, bottom);
 }
 

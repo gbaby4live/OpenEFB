@@ -1,5 +1,6 @@
 #include "openefb/core/application.hpp"
 #include "openefb/core/flight_plan_model.hpp"
+#include "openefb/core/route_progress_model.hpp"
 #include "openefb/core/telemetry_model.hpp"
 #include "openefb/core/ui_model.hpp"
 #include "openefb/core/window_controller.hpp"
@@ -89,7 +90,7 @@ int main() {
     require(ui_model.active_page() == openefb::EfbPage::home, "UI starts on the home page");
     require(ui_model.active_page_title() == "Home", "home page title is available");
     constexpr int navigation_x = 30;
-    const int aircraft_y = openefb::navigation_top + 3 * (openefb::navigation_item_height +
+    const int aircraft_y = openefb::navigation_top + 4 * (openefb::navigation_item_height +
                            openefb::navigation_item_gap) + 10;
     require(ui_model.select_at(navigation_x, aircraft_y), "aircraft navigation click is handled");
     require(ui_model.active_page() == openefb::EfbPage::aircraft, "navigation changes the active page");
@@ -162,6 +163,46 @@ int main() {
     require(weather_model.snapshot().revision == 1, "weather updates have revisions");
     weather_model.mark_unavailable();
     require(!weather_model.snapshot().available, "weather can be marked unavailable");
+
+    openefb::RouteProgressModel route_progress_model;
+    require(!route_progress_model.snapshot().available, "route progress starts unavailable");
+    openefb::TelemetrySnapshot progress_telemetry;
+    progress_telemetry.available = true;
+    progress_telemetry.latitude_degrees = 47.449;
+    progress_telemetry.longitude_degrees = -122.309;
+    progress_telemetry.ground_speed_knots = 120.0;
+    progress_telemetry.revision = 7;
+    openefb::FlightPlanSnapshot progress_route;
+    progress_route.available = true;
+    progress_route.revision = 8;
+    progress_route.active_leg_index = 0;
+    progress_route.legs.push_back(
+        {0, "KPDX", openefb::WaypointKind::airport, 0, 45.589, -122.597, true});
+    progress_route.legs.push_back(
+        {1, "APPCH", openefb::WaypointKind::fix, 3000, 45.500, -122.700, false});
+    route_progress_model.update(progress_telemetry, progress_route);
+    const auto& route_progress = route_progress_model.snapshot();
+    require(route_progress.available, "route progress is available with telemetry and a route");
+    require(route_progress.active_waypoint.identifier == "KPDX",
+            "active waypoint progress is identified");
+    require(route_progress.destination.identifier == "KPDX",
+            "the final airport remains the destination after approach fixes");
+    require(route_progress.destination.distance_nm > 100.0 &&
+                route_progress.destination.distance_nm < 120.0,
+            "great-circle distance is calculated in nautical miles");
+    require(route_progress.destination.bearing_degrees > 175.0 &&
+                route_progress.destination.bearing_degrees < 200.0,
+            "initial true bearing is calculated");
+    require(route_progress.destination.ete_available &&
+                route_progress.destination.ete_minutes > 50.0 &&
+                route_progress.destination.ete_minutes < 60.0,
+            "ETE uses live groundspeed");
+    progress_telemetry.ground_speed_knots = 0.5;
+    route_progress_model.update(progress_telemetry, progress_route);
+    require(!route_progress_model.snapshot().destination.ete_available,
+            "ETE is suppressed near zero groundspeed");
+    route_progress_model.mark_unavailable();
+    require(!route_progress_model.snapshot().available, "route progress can be marked unavailable");
 
     std::cout << "OpenEFB core tests passed\n";
     return EXIT_SUCCESS;
