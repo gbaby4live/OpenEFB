@@ -13,6 +13,7 @@ public:
 
     [[nodiscard]] std::optional<WindowGeometry> load_geometry() const;
     void save_geometry(const WindowGeometry& geometry) const;
+    [[nodiscard]] std::filesystem::path map_cache_directory() const;
 
 private:
     std::filesystem::path file_path_;

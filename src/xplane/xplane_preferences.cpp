@@ -42,4 +42,8 @@ void XPlanePreferences::save_geometry(const WindowGeometry& geometry) const {
     }
 }
 
+std::filesystem::path XPlanePreferences::map_cache_directory() const {
+    return file_path_.parent_path() / "OpenEFB" / "map-cache";
+}
+
 } // namespace openefb::xplane

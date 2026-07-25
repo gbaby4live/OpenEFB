@@ -39,7 +39,7 @@ After installing the built `OpenEFB` plugin package, open it from:
 For a local Windows build, copy the generated `build/OpenEFB` directory into
 `X-Plane 12/Resources/plugins` before starting the simulator.
 
-The M7 shell provides a dark tablet layout with a live UTC status bar and eight
+The M8 shell provides a dark tablet layout with a live UTC status bar and eight
 mouse-selectable pages: Home, Flight Plan, Progress, Weather, Fuel, Aircraft,
 Settings, and About. Window position and size are saved in X-Plane's
 preferences directory. Home and Aircraft display
@@ -59,5 +59,16 @@ Fuel flow is displayed in US gallons per hour using the standard avgas density
 of 6.0 lb per US gallon. Remaining fuel mass stays visible in kilograms and
 pounds because X-Plane reports fuel internally by mass.
 
+Home now contains a large bordered live-map panel without taking over the full
+page. On Windows, it loads OpenStreetMap Street tiles by default and offers a
+one-click OpenTopoMap Topo view. It overlays range rings, aircraft heading, the
+programmed route, the active leg, key waypoint labels, destination distance and
+ETE, and supports mouse-wheel zoom from 5 to 320 nautical miles. Visible tiles
+are loaded in the background, cached locally, and credited inside the map;
+aircraft and fuel summaries remain visible below the panel. Internet access is
+required for tiles not already cached. The native tile adapter for macOS and
+Linux is planned; those builds currently retain the vector map fallback.
+
 See [docs/architecture.md](docs/architecture.md) for architectural boundaries
-and threading invariants.
+and threading invariants, and [docs/product-roadmap.md](docs/product-roadmap.md)
+for the MSFS 2024-style feature roadmap.

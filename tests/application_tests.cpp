@@ -1,6 +1,7 @@
 #include "openefb/core/application.hpp"
 #include "openefb/core/flight_plan_model.hpp"
 #include "openefb/core/fuel_model.hpp"
+#include "openefb/core/moving_map_model.hpp"
 #include "openefb/core/route_progress_model.hpp"
 #include "openefb/core/telemetry_model.hpp"
 #include "openefb/core/ui_model.hpp"
@@ -8,6 +9,7 @@
 #include "openefb/core/window_geometry.hpp"
 #include "openefb/core/weather_model.hpp"
 
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -227,6 +229,28 @@ int main() {
             "range is withheld without endurance and groundspeed");
     fuel_model.mark_unavailable();
     require(!fuel_model.snapshot().available, "fuel can be marked unavailable");
+
+    openefb::MovingMapModel moving_map;
+    require(moving_map.style() == openefb::MapStyle::street,
+            "moving map defaults to OpenStreetMap street tiles");
+    moving_map.select_style(openefb::MapStyle::topographic);
+    require(moving_map.style() == openefb::MapStyle::topographic,
+            "moving map can select topographic tiles");
+    require(moving_map.range_nm() == 40.0, "moving map starts at a useful regional range");
+    require(moving_map.zoom_in() && moving_map.range_nm() == 20.0,
+            "moving map can zoom in");
+    require(moving_map.apply_wheel(-2) && moving_map.range_nm() == 80.0,
+            "mouse wheel can zoom the moving map out");
+    const auto same_position = moving_map.project(47.449, -122.309, 47.449, -122.309);
+    require(same_position.valid && std::abs(same_position.east_nm) < 0.001 &&
+                std::abs(same_position.north_nm) < 0.001,
+            "aircraft position projects to map center");
+    const auto portland = moving_map.project(47.449, -122.309, 45.589, -122.597);
+    require(portland.valid && portland.east_nm < 0.0 && portland.north_nm < -100.0,
+            "route points project to local nautical-mile offsets");
+    const auto dateline = moving_map.project(0.0, 179.5, 0.0, -179.5);
+    require(dateline.valid && dateline.east_nm > 59.0 && dateline.east_nm < 61.0,
+            "map projection follows the short path across the date line");
 
     std::cout << "OpenEFB core tests passed\n";
     return EXIT_SUCCESS;

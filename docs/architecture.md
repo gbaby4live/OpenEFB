@@ -95,3 +95,25 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
 - The Fuel page reports remaining mass in kilograms and pounds. Fuel flow is
   converted to US GPH using a clearly labeled 6.0 lb/US gal avgas basis, while
   endurance calculations remain in X-Plane's native mass units.
+
+## M8: moving-map foundation
+
+- `MovingMapModel` owns discrete map ranges and a dateline-safe local
+  latitude/longitude projection expressed in nautical miles, plus the selected
+  Street or Topo presentation.
+- Home uses a large, bordered north-up map panel while retaining summary cards
+  below it. The map stays centered on live aircraft position and uses a
+  heading-oriented aircraft symbol.
+- The renderer clips route segments to the map viewport and distinguishes the
+  active leg, route waypoints, endpoints, and destination progress.
+- Mouse-wheel zoom changes range without simulator data writes. Map projection
+  math remains in the core and is covered by unit tests.
+- `XPlaneMapTiles` requests only the raster tiles visible in the current panel.
+  Network access and PNG decoding happen on a worker thread; OpenGL texture
+  creation remains on X-Plane's drawing thread.
+- The Windows adapter uses WinHTTP and Windows Imaging Component, requiring no
+  extra runtime DLLs. Street and Topo tiles are cached for at least seven days,
+  failed requests back off, and the in-memory texture set is bounded.
+- The panel always shows the provider attribution required by OpenStreetMap and
+  OpenTopoMap. Non-Windows adapters retain the vector fallback until native HTTP
+  and image-decoding implementations are added.

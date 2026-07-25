@@ -2,12 +2,14 @@
 
 #include "openefb/core/flight_plan_model.hpp"
 #include "openefb/core/fuel_model.hpp"
+#include "openefb/core/moving_map_model.hpp"
 #include "openefb/core/route_progress_model.hpp"
 #include "openefb/core/ui_model.hpp"
 #include "openefb/core/telemetry_model.hpp"
 #include "openefb/core/window_controller.hpp"
 #include "openefb/core/weather_model.hpp"
 #include "xplane_preferences.hpp"
+#include "xplane_map_tiles.hpp"
 
 #include <XPLMDisplay.h>
 
@@ -20,6 +22,7 @@ public:
     static std::unique_ptr<WindowSurface> create(UiModel& ui_model, TelemetryModel& telemetry_model,
                                                  FlightPlanModel& flight_plan_model,
                                                  FuelModel& fuel_model,
+                                                 MovingMapModel& moving_map_model,
                                                  RouteProgressModel& route_progress_model,
                                                  WeatherModel& weather_model,
                                                  XPlanePreferences& preferences);
@@ -36,6 +39,7 @@ public:
 private:
     XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
                  FlightPlanModel& flight_plan_model, FuelModel& fuel_model,
+                 MovingMapModel& moving_map_model,
                  RouteProgressModel& route_progress_model,
                  WeatherModel& weather_model,
                  XPlanePreferences& preferences);
@@ -54,9 +58,11 @@ private:
     TelemetryModel& telemetry_model_;
     FlightPlanModel& flight_plan_model_;
     FuelModel& fuel_model_;
+    MovingMapModel& moving_map_model_;
     RouteProgressModel& route_progress_model_;
     WeatherModel& weather_model_;
     XPlanePreferences& preferences_;
+    mutable XPlaneMapTiles map_tiles_;
     XPLMWindowID window_id_{nullptr};
 };
 
