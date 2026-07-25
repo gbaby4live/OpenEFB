@@ -39,9 +39,10 @@ After installing the built `OpenEFB` plugin package, open it from:
 For a local Windows build, copy the generated `build/OpenEFB` directory into
 `X-Plane 12/Resources/plugins` before starting the simulator.
 
-The M11 shell provides a dark tablet layout with a live UTC status bar and nine
-mouse-selectable pages: Home, Flight Plan, Airports, Progress, Weather, Fuel,
-Aircraft, Settings, and About. Window position and size are saved in X-Plane's
+The M12 shell provides a dark tablet layout with a live UTC status bar and nine
+mouse-selectable pages: Home, Flight Plan, Airports, Progress, Weather, Planning,
+Aircraft, Settings, and About. The Fuel page is now Aircraft Planning, combining
+fuel with weight-and-balance information. Window position and size are saved in X-Plane's
 preferences directory. Home and Aircraft display
 live aircraft identity, position, altitude, ground speed, heading, and vertical
 speed sampled from X-Plane at 5 Hz. High-contrast text and an enforced minimum
@@ -89,6 +90,13 @@ METAR reports, and AIR draws installed X-Plane OpenAIR boundaries including
 polygons, circles, and directional arcs. Custom Data airspace takes priority
 over X-Plane's default file. Parsing happens in the background and on-screen
 work is bounded to protect simulator frame time.
+
+Aircraft Planning reads the active aircraft's empty, payload, fuel, gross, and
+maximum weights plus its live CG offset. It combines destination ETE with current
+engine burn and an adjustable reserve to estimate trip fuel, reserve fuel, fuel
+margin, and landing weight. Weight and fuel warnings are aircraft-aware, while
+the page explicitly avoids invented runway distances or V-speeds when no
+aircraft performance profile is available.
 
 See [docs/architecture.md](docs/architecture.md) for architectural boundaries
 and threading invariants, and [docs/product-roadmap.md](docs/product-roadmap.md)

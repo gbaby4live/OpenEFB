@@ -20,10 +20,11 @@ original open-source code and visuals.
   installed SID, STAR, and approach names
 - M11: switchable Home map overlays for endpoint weather, route airports and
   navaids, and installed OpenAIR polygons, circles, and arcs
+- M12: live aircraft weight-and-balance summary, adjustable fuel reserve,
+  trip-fuel margin, predicted landing weight, and dispatch outlook
 
 ## Planned operational workflow
 
-- M12: aircraft-aware weight and balance, fuel planning, and performance tools
 - M13: charts, aircraft documents, checklists, notes, and flight briefing
 - M14: route import/export, settings, accessibility, and cross-platform polish
 

@@ -6,6 +6,7 @@
 #include "openefb/core/airport_info.hpp"
 #include "openefb/core/fuel_model.hpp"
 #include "openefb/core/moving_map_model.hpp"
+#include "openefb/core/planning_model.hpp"
 #include "openefb/core/route_progress_model.hpp"
 #include "openefb/core/ui_model.hpp"
 #include "openefb/core/telemetry_model.hpp"
@@ -33,6 +34,7 @@ public:
                                                  XPlaneAirportData& xplane_airport_data,
                                                  AirspaceModel& airspace_model,
                                                  FuelModel& fuel_model,
+                                                 PlanningModel& planning_model,
                                                  MovingMapModel& moving_map_model,
                                                  RouteProgressModel& route_progress_model,
                                                  WeatherModel& weather_model,
@@ -61,6 +63,7 @@ private:
                  XPlaneAirportData& xplane_airport_data,
                  AirspaceModel& airspace_model,
                  FuelModel& fuel_model,
+                 PlanningModel& planning_model,
                  MovingMapModel& moving_map_model,
                  RouteProgressModel& route_progress_model,
                  WeatherModel& weather_model,
@@ -90,6 +93,7 @@ private:
     XPlaneAirportData& xplane_airport_data_;
     AirspaceModel& airspace_model_;
     FuelModel& fuel_model_;
+    PlanningModel& planning_model_;
     MovingMapModel& moving_map_model_;
     RouteProgressModel& route_progress_model_;
     WeatherModel& weather_model_;

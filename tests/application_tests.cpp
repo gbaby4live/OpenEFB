@@ -5,6 +5,7 @@
 #include "openefb/core/flight_plan_editor.hpp"
 #include "openefb/core/fuel_model.hpp"
 #include "openefb/core/moving_map_model.hpp"
+#include "openefb/core/planning_model.hpp"
 #include "openefb/core/route_progress_model.hpp"
 #include "openefb/core/telemetry_model.hpp"
 #include "openefb/core/ui_model.hpp"
@@ -105,6 +106,8 @@ int main() {
     require(ui_model.active_page() == openefb::EfbPage::aircraft, "ignored clicks preserve the active page");
     ui_model.select_page(openefb::EfbPage::settings);
     require(ui_model.active_page_title() == "Settings", "pages can be selected directly");
+    ui_model.select_page(openefb::EfbPage::planning);
+    require(ui_model.active_page_title() == "Planning", "aircraft planning replaces the fuel-only page");
 
     const openefb::WindowGeometry valid_geometry{100, 700, 960, 120};
     const openefb::WindowGeometry invalid_geometry{100, 200, 300, 100};
@@ -322,6 +325,34 @@ int main() {
             "range is withheld without endurance and groundspeed");
     fuel_model.mark_unavailable();
     require(!fuel_model.snapshot().available, "fuel can be marked unavailable");
+
+    fuel_model.update(180.0, 36.0, 120.0, 11);
+    progress_telemetry.ground_speed_knots = 120.0;
+    route_progress_model.update(progress_telemetry, progress_route);
+    openefb::PlanningModel planning_model;
+    const openefb::AircraftLoading loading{780.0, 180.0, 180.0, 1140.0,
+                                            1300.0, 260.0, 0.08};
+    planning_model.update(loading, fuel_model.snapshot(), route_progress_model.snapshot());
+    const auto& plan = planning_model.snapshot();
+    require(plan.available && !plan.overweight && plan.gross_margin_kg == 160.0,
+            "planning model evaluates aircraft-specific gross weight limits");
+    require(plan.fuel_plan_available && plan.trip_fuel_kg > 30.0 &&
+                plan.reserve_fuel_kg == 27.0 && plan.fuel_margin_kg > 115.0 &&
+                plan.fuel_flow_us_gallons_per_hour > 13.2,
+            "planning model combines route ETE, live burn, and reserve fuel");
+    require(plan.predicted_landing_weight_kg < loading.gross_weight_kg && plan.dispatch_ready,
+            "planning model predicts landing weight and a passing dispatch outlook");
+    require(planning_model.adjust_reserve_minutes(15) &&
+                planning_model.snapshot().reserve_minutes == 60,
+            "reserve time can be adjusted in bounded increments");
+    planning_model.update(loading, fuel_model.snapshot(), route_progress_model.snapshot());
+    require(planning_model.snapshot().reserve_fuel_kg == 36.0,
+            "changed reserve time is reflected in the next live calculation");
+    auto overloaded = loading;
+    overloaded.gross_weight_kg = 1350.0;
+    planning_model.update(overloaded, fuel_model.snapshot(), route_progress_model.snapshot());
+    require(planning_model.snapshot().overweight && !planning_model.snapshot().dispatch_ready,
+            "overweight aircraft never receive a passing planning outlook");
 
     openefb::MovingMapModel moving_map;
     require(moving_map.style() == openefb::MapStyle::street,

@@ -447,14 +447,6 @@ void draw_progress_page(const RouteProgressSnapshot& progress, int left, int top
               "Estimate basis", "Direct distance and current groundspeed");
 }
 
-std::string format_fuel_mass(const FuelSnapshot& fuel) {
-    constexpr double kilograms_to_pounds = 2.2046226218;
-    char value[96]{};
-    std::snprintf(value, sizeof(value), "%.1f kg  |  %.0f lb",
-                  fuel.fuel_remaining_kg, fuel.fuel_remaining_kg * kilograms_to_pounds);
-    return value;
-}
-
 std::string format_fuel_flow(const FuelSnapshot& fuel) {
     if (!fuel.endurance_available) {
         return "Waiting for measurable engine fuel flow";
@@ -465,39 +457,77 @@ std::string format_fuel_flow(const FuelSnapshot& fuel) {
     return value;
 }
 
-std::string format_fuel_estimates(const FuelSnapshot& fuel) {
-    if (!fuel.endurance_available) {
-        return "Start an engine to calculate endurance";
-    }
-    const double bounded_hours = std::min(999.0, fuel.endurance_hours);
-    const int total_minutes = static_cast<int>(std::lround(bounded_hours * 60.0));
-    std::string value = "Endurance " + std::to_string(total_minutes / 60) + " hr " +
-                        std::to_string(total_minutes % 60) + " min";
-    if (fuel.range_available) {
-        char range[48]{};
-        std::snprintf(range, sizeof(range), "  |  Range %.0f NM", fuel.estimated_range_nm);
-        value += range;
-    } else {
-        value += "  |  Range unavailable while parked";
-    }
+std::string format_weight(double kilograms) {
+    char value[64]{};
+    std::snprintf(value, sizeof(value), "%.0f kg  /  %.0f lb", kilograms, kilograms * 2.2046226218);
     return value;
 }
 
-void draw_fuel_page(const FuelSnapshot& fuel, int left, int top, int right) {
+void draw_planning_page(const PlanningSnapshot& planning, int left, int top, int right) {
     const int card_right = std::max(left + 260, right - 28);
-    draw_text(left, top, "Fuel", text_primary, xplmFont_Basic);
-    draw_text(left, top - 28, "Live totals and estimates from the active aircraft", text_muted);
-    if (!fuel.available) {
+    draw_text(left, top, "Aircraft Planning", text_primary, xplmFont_Basic);
+    draw_text(left, top - 28, "Live weight, balance, fuel reserve, and landing outlook", text_muted);
+    if (!planning.available) {
         draw_card(left, top - 62, card_right, top - 158,
-                  "Fuel status", "Waiting for X-Plane fuel data");
+                  "Planning status", "Waiting for active-aircraft weight data");
         return;
     }
-    draw_card(left, top - 62, card_right, top - 158,
-              "Fuel remaining", format_fuel_mass(fuel));
-    draw_card(left, top - 178, card_right, top - 274,
-              "Current burn", format_fuel_flow(fuel));
-    draw_card(left, top - 294, card_right, top - 390,
-              "Estimates", format_fuel_estimates(fuel));
+    const int gap = 12;
+    const int middle = (left + card_right) / 2;
+    const int left_right = middle - gap / 2;
+    const int right_left = middle + gap / 2;
+    const Color load_color = planning.overweight ? Color{1.0F, 0.38F, 0.30F, 1.0F} : connected;
+    char gross[112]{};
+    std::snprintf(gross, sizeof(gross), "%.0f / %.0f kg  |  %.0f%%  |  %s",
+                  planning.loading.gross_weight_kg, planning.loading.maximum_gross_weight_kg,
+                  planning.loading_percent, planning.overweight ? "OVER" : "OK");
+    draw_rectangle(left, top - 62, left_right, top - 148, card);
+    draw_text(left + 18, top - 91, "GROSS / MAXIMUM", load_color);
+    draw_text(left + 18, top - 121, gross, text_primary);
+    char empty_payload[100]{};
+    std::snprintf(empty_payload, sizeof(empty_payload), "Empty %.0f lb  |  Payload %.0f lb",
+                  planning.loading.empty_weight_kg * 2.2046226218,
+                  planning.loading.payload_weight_kg * 2.2046226218);
+    draw_card(right_left, top - 62, card_right, top - 148,
+              "EMPTY / PAYLOAD", empty_payload);
+
+    std::string fuel_load = format_weight(planning.loading.fuel_weight_kg);
+    if (planning.loading.fuel_capacity_kg > 0.0) {
+        char capacity[48]{};
+        std::snprintf(capacity, sizeof(capacity), "  |  %.0f%% capacity",
+                      100.0 * planning.loading.fuel_weight_kg / planning.loading.fuel_capacity_kg);
+        fuel_load += capacity;
+    }
+    char cg[80]{};
+    std::snprintf(cg, sizeof(cg), "%.3f m  /  %.1f in from aircraft default",
+                  planning.loading.cg_offset_meters, planning.loading.cg_offset_meters * 39.37007874);
+    draw_card(left, top - 160, left_right, top - 246, "FUEL LOAD", fuel_load);
+    draw_card(right_left, top - 160, card_right, top - 246, "CG OFFSET", cg);
+
+    draw_text(left, top - 278, "FUEL PLAN", accent);
+    draw_button(left, top - 293, left + 58, top - 326, "-5");
+    char reserve_label[64]{};
+    std::snprintf(reserve_label, sizeof(reserve_label), "Reserve %d min", planning.reserve_minutes);
+    draw_text(left + 72, top - 315, reserve_label, text_primary);
+    draw_button(left + 190, top - 293, left + 248, top - 326, "+5");
+    if (!planning.fuel_plan_available) {
+        draw_text(left, top - 356, "Enter a route and establish measurable fuel flow for trip planning.", text_muted);
+    } else {
+        char plan[180]{};
+        std::snprintf(plan, sizeof(plan),
+                      "Burn %.1f GPH  |  Trip %.1f kg  |  Reserve %.1f kg",
+                      planning.fuel_flow_us_gallons_per_hour,
+                      planning.trip_fuel_kg, planning.reserve_fuel_kg);
+        draw_text(left, top - 356, plan,
+                  planning.fuel_margin_kg >= 0.0 ? text_primary : Color{1.0F, 0.38F, 0.30F, 1.0F});
+        char landing[150]{};
+        std::snprintf(landing, sizeof(landing), "Landing %.0f kg  |  Fuel margin %.1f kg  |  %s",
+                      planning.predicted_landing_weight_kg, planning.fuel_margin_kg,
+                      planning.dispatch_ready ? "PLAN CHECKS PASS" : "REVIEW WEIGHT OR FUEL");
+        draw_text(left, top - 384, landing, planning.dispatch_ready ? connected : load_color);
+    }
+    draw_text(left, top - 420,
+              "Planning estimate only - verify aircraft POH/AFM limits and performance tables.", text_muted);
 }
 
 struct ScreenPoint {
@@ -900,6 +930,7 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                        std::string_view airport_query,
                        const AirportInfoSnapshot& airport_info,
                        const FuelSnapshot& fuel,
+                       const PlanningSnapshot& planning,
                        const RouteProgressSnapshot& route_progress,
                        const WeatherSnapshot& weather,
                        const AirspaceSnapshot& airspace,
@@ -925,8 +956,8 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
     case EfbPage::weather:
         draw_weather_page(weather, left, top, right);
         break;
-    case EfbPage::fuel:
-        draw_fuel_page(fuel, left, top, right);
+    case EfbPage::planning:
+        draw_planning_page(planning, left, top, right);
         break;
     case EfbPage::aircraft:
         draw_text(left, top, "Aircraft", text_primary, xplmFont_Basic);
@@ -951,13 +982,13 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         draw_text(left, top, "About OpenEFB", text_primary, xplmFont_Basic);
         draw_text(left, top - 28, "An open-source electronic flight bag for X-Plane 12.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Version", "0.11.0 - M11 operational map overlays");
+                  "Version", "0.12.0 - M12 aircraft planning");
         draw_card(left, top - 178, card_right, top - 274,
                   "Project", "Built in the open for the flight-sim community");
         break;
     }
 
-    draw_text(left, bottom + 22, "OPEN EFB  /  M11", text_muted);
+    draw_text(left, bottom + 22, "OPEN EFB  /  M12", text_muted);
 }
 
 } // namespace
@@ -970,6 +1001,7 @@ std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, Telemetry
                                                     XPlaneAirportData& xplane_airport_data,
                                                     AirspaceModel& airspace_model,
                                                     FuelModel& fuel_model,
+                                                    PlanningModel& planning_model,
                                                     MovingMapModel& moving_map_model,
                                                     RouteProgressModel& route_progress_model,
                                                     WeatherModel& weather_model,
@@ -978,7 +1010,7 @@ std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, Telemetry
         new XPlaneWindow(ui_model, telemetry_model, flight_plan_model, flight_plan_editor,
                          xplane_flight_plan, airport_info_model, xplane_airport_data,
                          airspace_model,
-                         fuel_model, moving_map_model,
+                         fuel_model, planning_model, moving_map_model,
                          route_progress_model,
                          weather_model, preferences));
     if (!window->window_id_) {
@@ -995,6 +1027,7 @@ XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
                            XPlaneAirportData& xplane_airport_data,
                            AirspaceModel& airspace_model,
                            FuelModel& fuel_model,
+                           PlanningModel& planning_model,
                            MovingMapModel& moving_map_model,
                            RouteProgressModel& route_progress_model,
                            WeatherModel& weather_model,
@@ -1003,6 +1036,7 @@ XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
       flight_plan_model_(flight_plan_model), flight_plan_editor_(flight_plan_editor),
       xplane_flight_plan_(xplane_flight_plan), airport_info_model_(airport_info_model),
       xplane_airport_data_(xplane_airport_data), airspace_model_(airspace_model), fuel_model_(fuel_model),
+      planning_model_(planning_model),
       moving_map_model_(moving_map_model),
       route_progress_model_(route_progress_model),
       weather_model_(weather_model),
@@ -1111,7 +1145,7 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
     draw_page_content(ui_model_.active_page(), telemetry, flight_plan_model_.snapshot(),
                       flight_plan_editor_,
                       airport_query_, airport_info_model_.snapshot(),
-                      fuel_model_.snapshot(), route_progress_model_.snapshot(),
+                      fuel_model_.snapshot(), planning_model_.snapshot(), route_progress_model_.snapshot(),
                       weather_model_.snapshot(), airspace_model_.snapshot(), moving_map_model_,
                       map_tiles_,
                       content_left, content_top, right, bottom);
@@ -1267,6 +1301,20 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
     int right{};
     int bottom{};
     XPLMGetWindowGeometry(window_id, &left, &top, &right, &bottom);
+    if (window->ui_model_.active_page() == EfbPage::planning) {
+        const int content_left = left + sidebar_width + 30;
+        const int content_top = top - status_bar_height - 38;
+        if (y <= content_top - 293 && y >= content_top - 326) {
+            if (x >= content_left && x <= content_left + 58) {
+                window->planning_model_.adjust_reserve_minutes(-5);
+                return 1;
+            }
+            if (x >= content_left + 190 && x <= content_left + 248) {
+                window->planning_model_.adjust_reserve_minutes(5);
+                return 1;
+            }
+        }
+    }
     if (window->ui_model_.active_page() == EfbPage::airports) {
         const int content_left = left + sidebar_width + 30;
         const int content_top = top - status_bar_height - 38;

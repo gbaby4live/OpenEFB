@@ -11,7 +11,7 @@ enum class EfbPage {
     airports,
     progress,
     weather,
-    fuel,
+    planning,
     aircraft,
     settings,
     about,

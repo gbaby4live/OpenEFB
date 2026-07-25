@@ -5,6 +5,7 @@
 #include "openefb/core/flight_plan_editor.hpp"
 #include "openefb/core/fuel_model.hpp"
 #include "openefb/core/moving_map_model.hpp"
+#include "openefb/core/planning_model.hpp"
 #include "openefb/core/route_progress_model.hpp"
 #include "openefb/core/ui_model.hpp"
 #include "openefb/core/telemetry_model.hpp"
@@ -16,6 +17,7 @@
 #include "xplane_fuel.hpp"
 #include "xplane_menu.hpp"
 #include "xplane_preferences.hpp"
+#include "xplane_planning.hpp"
 #include "xplane_route_progress.hpp"
 #include "xplane_telemetry.hpp"
 #include "xplane_weather.hpp"
@@ -45,6 +47,7 @@ struct PluginRuntime {
           fuel_model(),
           moving_map_model(),
           route_progress_model(),
+          planning_model(),
           weather_model(),
           preferences(),
           telemetry(telemetry_model),
@@ -53,13 +56,14 @@ struct PluginRuntime {
           airspace(airspace_model),
           fuel(fuel_model, telemetry_model),
           route_progress(route_progress_model, telemetry_model, flight_plan_model),
+          planning(planning_model, fuel_model, route_progress_model),
           weather(weather_model, flight_plan_model),
           window_controller([this] {
               return openefb::xplane::XPlaneWindow::create(
                   ui_model, telemetry_model, flight_plan_model, flight_plan_editor, flight_plan,
                   airport_info_model, airport_data,
                   airspace_model,
-                  fuel_model, moving_map_model,
+                  fuel_model, planning_model, moving_map_model,
                   route_progress_model,
                   weather_model, preferences);
           }),
@@ -89,6 +93,7 @@ struct PluginRuntime {
     openefb::FuelModel fuel_model;
     openefb::MovingMapModel moving_map_model;
     openefb::RouteProgressModel route_progress_model;
+    openefb::PlanningModel planning_model;
     openefb::WeatherModel weather_model;
     openefb::xplane::XPlanePreferences preferences;
     openefb::xplane::XPlaneTelemetry telemetry;
@@ -97,6 +102,7 @@ struct PluginRuntime {
     openefb::xplane::XPlaneAirspace airspace;
     openefb::xplane::XPlaneFuel fuel;
     openefb::xplane::XPlaneRouteProgress route_progress;
+    openefb::xplane::XPlanePlanning planning;
     openefb::xplane::XPlaneWeather weather;
     openefb::WindowController window_controller;
     openefb::xplane::XPlaneMenu menu;
@@ -137,6 +143,7 @@ PLUGIN_API void XPluginStop() {
         runtime->airspace.stop();
         runtime->airport_data.stop();
         runtime->route_progress.stop();
+        runtime->planning.stop();
         runtime->fuel.stop();
         runtime->flight_plan.stop();
         runtime->telemetry.stop();
@@ -168,6 +175,9 @@ PLUGIN_API int XPluginEnable() {
     if (!runtime->route_progress.start()) {
         PluginRuntime::xplane_log("route progress unavailable");
     }
+    if (!runtime->planning.start()) {
+        PluginRuntime::xplane_log("aircraft planning data unavailable");
+    }
     if (!runtime->weather.start()) {
         PluginRuntime::xplane_log("weather unavailable");
     }
@@ -180,6 +190,7 @@ PLUGIN_API void XPluginDisable() {
         runtime->airspace.stop();
         runtime->airport_data.stop();
         runtime->route_progress.stop();
+        runtime->planning.stop();
         runtime->fuel.stop();
         runtime->flight_plan.stop();
         runtime->telemetry.stop();

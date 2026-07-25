@@ -166,3 +166,17 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
   keeps the route and aircraft above the optional operational layers.
 - WX currently indicates METAR availability at route endpoint airports; it is
   intentionally not presented as precipitation radar.
+
+## M12: aircraft planning
+
+- `PlanningModel` combines live aircraft loading, fuel flow, destination ETE,
+  and a user-selected reserve in simulator-independent calculations.
+- `XPlanePlanning` samples public aircraft weight and CG datarefs once per
+  second on X-Plane's flight-loop thread; no planning calculation writes to the
+  aircraft.
+- Gross-weight margin uses the loaded aircraft's own maximum weight. Predicted
+  landing weight and fuel margin use current burn and route ETE, and clearly
+  remain unavailable until both inputs are meaningful.
+- The page does not synthesize takeoff distance, landing distance, or V-speeds.
+  Those require a future aircraft performance profile backed by an AFM/POH or
+  aircraft-provided data.
