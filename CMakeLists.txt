@@ -5,8 +5,13 @@ project(OpenEFB VERSION 0.1.0 LANGUAGES CXX)
 option(OPEN_EFB_BUILD_TESTS "Build OpenEFB unit tests" ON)
 set(OPEN_EFB_XPLANE_SDK_PATH "" CACHE PATH "Path to the X-Plane SDK root")
 
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 add_library(openefb_core STATIC
     src/core/application.cpp
+    src/core/window_controller.cpp
 )
 add_library(OpenEFB::core ALIAS openefb_core)
 
@@ -21,7 +26,11 @@ else()
 endif()
 
 if(OPEN_EFB_XPLANE_SDK_PATH)
-    add_library(openefb_plugin MODULE src/xplane/plugin.cpp)
+    add_library(openefb_plugin MODULE
+        src/xplane/plugin.cpp
+        src/xplane/xplane_menu.cpp
+        src/xplane/xplane_window.cpp
+    )
     target_link_libraries(openefb_plugin PRIVATE OpenEFB::core)
     target_include_directories(openefb_plugin PRIVATE
         "${OPEN_EFB_XPLANE_SDK_PATH}/CHeaders/XPLM"
@@ -31,20 +40,23 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
 
     if(WIN32)
         set(OPEN_EFB_PLUGIN_NAME win)
-        target_compile_definitions(openefb_plugin PRIVATE IBM=1 XPLM303=1)
+        target_compile_definitions(openefb_plugin PRIVATE
+            IBM=1 NOMINMAX=1
+            XPLM200=1 XPLM210=1 XPLM300=1 XPLM301=1 XPLM303=1
+        )
         target_link_directories(openefb_plugin PRIVATE
             "${OPEN_EFB_XPLANE_SDK_PATH}/Libraries/Win"
         )
         target_link_libraries(openefb_plugin PRIVATE XPLM_64)
     elseif(APPLE)
         set(OPEN_EFB_PLUGIN_NAME mac)
-        target_compile_definitions(openefb_plugin PRIVATE APL=1 XPLM303=1)
+        target_compile_definitions(openefb_plugin PRIVATE APL=1 XPLM200=1 XPLM210=1 XPLM300=1 XPLM301=1 XPLM303=1)
         target_link_libraries(openefb_plugin PRIVATE
             "${OPEN_EFB_XPLANE_SDK_PATH}/Libraries/Mac/XPLM.framework"
         )
     elseif(UNIX)
         set(OPEN_EFB_PLUGIN_NAME lin)
-        target_compile_definitions(openefb_plugin PRIVATE LIN=1 XPLM303=1)
+        target_compile_definitions(openefb_plugin PRIVATE LIN=1 XPLM200=1 XPLM210=1 XPLM300=1 XPLM301=1 XPLM303=1)
     else()
         message(FATAL_ERROR "Unsupported platform for the X-Plane plugin")
     endif()

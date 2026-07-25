@@ -12,5 +12,17 @@ points, simulator messages, and logging through `XPLMDebugString`.
 - Owned simulator resources are released during disable or stop.
 - Lifecycle transitions are explicit and safe to repeat where X-Plane may do so.
 
-The next milestone is an in-simulator shell: a menu command, window ownership
-abstraction, XPLM window lifecycle, and blank EFB surface.
+The first implementation milestone is an in-simulator shell: a menu command,
+window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
+
+## M1: in-simulator shell
+
+- `WindowController` owns the window through the simulator-independent
+  `WindowSurface` interface and creates it lazily on the first menu selection.
+- `XPlaneWindow` owns exactly one `XPLMWindowID` and releases it in its
+  destructor. Disable and stop reset the controller, so no simulator handle can
+  outlive the enabled plugin session.
+- `XPlaneMenu` registers under X-Plane's Plugins menu during `XPluginStart` and
+  unregisters during `XPluginStop`.
+- All XPLM creation, drawing, input, visibility, and destruction calls remain in
+  the X-Plane adapter.

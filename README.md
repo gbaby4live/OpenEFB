@@ -12,7 +12,9 @@ ctest --test-dir build --output-on-failure
 
 ## Build the X-Plane plugin
 
-Point CMake at an extracted X-Plane SDK:
+Download the latest SDK from the
+[official X-Plane Plugin SDK page](https://developer.x-plane.com/sdk/plugin-sdk-downloads/),
+extract it, and point CMake at the extracted SDK:
 
 ```sh
 cmake -S . -B build -DOPEN_EFB_XPLANE_SDK_PATH=/path/to/SDK
@@ -27,6 +29,18 @@ The plugin is emitted with X-Plane's package layout:
 
 Without `OPEN_EFB_XPLANE_SDK_PATH`, CMake skips the simulator adapter while the
 core library and tests remain fully buildable.
+
+## In X-Plane
+
+After installing the built `OpenEFB` plugin package, open it from:
+
+`Plugins > OpenEFB > Show / Hide OpenEFB`
+
+For a local Windows build, copy the generated `build/OpenEFB` directory into
+`X-Plane 12/Resources/plugins` before starting the simulator.
+
+The M1 shell is a resizable, floating X-Plane window. Its window resource is
+created on first use and released whenever the plugin is disabled or stopped.
 
 See [docs/architecture.md](docs/architecture.md) for architectural boundaries
 and threading invariants.
