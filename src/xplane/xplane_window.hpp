@@ -4,6 +4,7 @@
 #include "openefb/core/ui_model.hpp"
 #include "openefb/core/telemetry_model.hpp"
 #include "openefb/core/window_controller.hpp"
+#include "openefb/core/weather_model.hpp"
 #include "xplane_preferences.hpp"
 
 #include <XPLMDisplay.h>
@@ -16,6 +17,7 @@ class XPlaneWindow final : public WindowSurface {
 public:
     static std::unique_ptr<WindowSurface> create(UiModel& ui_model, TelemetryModel& telemetry_model,
                                                  FlightPlanModel& flight_plan_model,
+                                                 WeatherModel& weather_model,
                                                  XPlanePreferences& preferences);
 
     ~XPlaneWindow() override;
@@ -29,7 +31,8 @@ public:
 
 private:
     XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
-                 FlightPlanModel& flight_plan_model, XPlanePreferences& preferences);
+                 FlightPlanModel& flight_plan_model, WeatherModel& weather_model,
+                 XPlanePreferences& preferences);
 
     void render(XPLMWindowID window_id) const;
     void save_geometry() const;
@@ -44,6 +47,7 @@ private:
     UiModel& ui_model_;
     TelemetryModel& telemetry_model_;
     FlightPlanModel& flight_plan_model_;
+    WeatherModel& weather_model_;
     XPlanePreferences& preferences_;
     XPLMWindowID window_id_{nullptr};
 };

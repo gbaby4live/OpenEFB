@@ -61,3 +61,14 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
   can remain responsive without repeatedly scanning the route.
 - The Flight Plan page shows route endpoints and a window around the active leg;
   OpenEFB does not modify or program the simulator FMS.
+
+## M5: route weather
+
+- `WeatherModel` owns simulator-independent departure and destination METAR
+  snapshots, including the flight-plan revision used to select the airports.
+- `XPlaneWeather` selects the first and last airport entries in the active route
+  and reads X-Plane's last-downloaded METARs every 15 seconds.
+- Weather access runs only from a before-flight-model callback as required by
+  the X-Plane SDK and remains strictly read-only.
+- The Weather page wraps reports into high-contrast route cards and explains
+  empty reports when Real Weather data is unavailable.

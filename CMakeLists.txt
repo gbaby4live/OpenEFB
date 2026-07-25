@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(OpenEFB VERSION 0.4.0 LANGUAGES CXX)
+project(OpenEFB VERSION 0.5.0 LANGUAGES CXX)
 
 option(OPEN_EFB_BUILD_TESTS "Build OpenEFB unit tests" ON)
 set(OPEN_EFB_XPLANE_SDK_PATH "" CACHE PATH "Path to the X-Plane SDK root")
@@ -14,6 +14,7 @@ add_library(openefb_core STATIC
     src/core/flight_plan_model.cpp
     src/core/telemetry_model.cpp
     src/core/ui_model.cpp
+    src/core/weather_model.cpp
     src/core/window_controller.cpp
 )
 add_library(OpenEFB::core ALIAS openefb_core)
@@ -35,6 +36,7 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
         src/xplane/xplane_menu.cpp
         src/xplane/xplane_preferences.cpp
         src/xplane/xplane_telemetry.cpp
+        src/xplane/xplane_weather.cpp
         src/xplane/xplane_window.cpp
     )
     target_link_libraries(openefb_plugin PRIVATE OpenEFB::core)
@@ -54,7 +56,7 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
         set(OPEN_EFB_PLUGIN_NAME win)
         target_compile_definitions(openefb_plugin PRIVATE
             IBM=1 NOMINMAX=1
-            XPLM200=1 XPLM210=1 XPLM300=1 XPLM301=1 XPLM303=1
+            XPLM200=1 XPLM210=1 XPLM300=1 XPLM301=1 XPLM303=1 XPLM400=1
         )
         target_link_directories(openefb_plugin PRIVATE
             "${OPEN_EFB_XPLANE_SDK_PATH}/Libraries/Win"
@@ -64,7 +66,7 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
     elseif(APPLE)
         set(OPEN_EFB_PLUGIN_NAME mac)
         target_compile_definitions(openefb_plugin PRIVATE
-            APL=1 XPLM200=1 XPLM210=1 XPLM300=1 XPLM301=1 XPLM303=1
+            APL=1 XPLM200=1 XPLM210=1 XPLM300=1 XPLM301=1 XPLM303=1 XPLM400=1
         )
         target_link_libraries(openefb_plugin PRIVATE
             "${OPEN_EFB_XPLANE_SDK_PATH}/Libraries/Mac/XPLM.framework"
@@ -74,7 +76,7 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
     elseif(UNIX)
         set(OPEN_EFB_PLUGIN_NAME lin)
         target_compile_definitions(openefb_plugin PRIVATE
-            LIN=1 XPLM200=1 XPLM210=1 XPLM300=1 XPLM301=1 XPLM303=1
+            LIN=1 XPLM200=1 XPLM210=1 XPLM300=1 XPLM301=1 XPLM303=1 XPLM400=1
         )
         find_package(OpenGL REQUIRED)
         target_link_libraries(openefb_plugin PRIVATE OpenGL::GL)

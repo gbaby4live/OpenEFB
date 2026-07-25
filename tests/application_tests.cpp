@@ -4,6 +4,7 @@
 #include "openefb/core/ui_model.hpp"
 #include "openefb/core/window_controller.hpp"
 #include "openefb/core/window_geometry.hpp"
+#include "openefb/core/weather_model.hpp"
 
 #include <cstdlib>
 #include <iostream>
@@ -88,7 +89,7 @@ int main() {
     require(ui_model.active_page() == openefb::EfbPage::home, "UI starts on the home page");
     require(ui_model.active_page_title() == "Home", "home page title is available");
     constexpr int navigation_x = 30;
-    const int aircraft_y = openefb::navigation_top + 2 * (openefb::navigation_item_height +
+    const int aircraft_y = openefb::navigation_top + 3 * (openefb::navigation_item_height +
                            openefb::navigation_item_gap) + 10;
     require(ui_model.select_at(navigation_x, aircraft_y), "aircraft navigation click is handled");
     require(ui_model.active_page() == openefb::EfbPage::aircraft, "navigation changes the active page");
@@ -143,6 +144,24 @@ int main() {
             "out-of-range active legs are safely cleared");
     flight_plan_model.mark_unavailable();
     require(!flight_plan_model.snapshot().available, "flight plan can be marked unavailable");
+
+    openefb::WeatherModel weather_model;
+    require(!weather_model.snapshot().available, "weather starts unavailable");
+    openefb::WeatherSnapshot weather;
+    weather.departure = {"KSEA", "KSEA 251653Z 18008KT 10SM FEW020 15/09 A3004"};
+    weather.destination = {"KPDX", "KPDX 251653Z 22005KT 10SM SCT025 17/10 A3001"};
+    weather.route_revision = 4;
+    weather_model.update(weather);
+    require(weather_model.snapshot().available, "weather update marks the service available");
+    require(weather_model.snapshot().departure.airport_id == "KSEA",
+            "departure weather is retained");
+    require(weather_model.snapshot().destination.metar.find("KPDX") == 0,
+            "destination METAR is retained");
+    require(weather_model.snapshot().route_revision == 4,
+            "weather records their source route revision");
+    require(weather_model.snapshot().revision == 1, "weather updates have revisions");
+    weather_model.mark_unavailable();
+    require(!weather_model.snapshot().available, "weather can be marked unavailable");
 
     std::cout << "OpenEFB core tests passed\n";
     return EXIT_SUCCESS;

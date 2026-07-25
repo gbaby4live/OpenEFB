@@ -20,6 +20,7 @@
 #include <ctime>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace openefb::xplane {
 
@@ -177,8 +178,75 @@ void draw_flight_plan_page(const FlightPlanSnapshot& flight_plan,
     }
 }
 
+std::vector<std::string> wrap_text(std::string_view value, std::size_t maximum_characters) {
+    std::vector<std::string> lines;
+    std::string line;
+    std::size_t position = 0;
+    while (position < value.size()) {
+        while (position < value.size() && value[position] == ' ') {
+            ++position;
+        }
+        const std::size_t end = value.find(' ', position);
+        const std::string word(value.substr(position, end - position));
+        if (!line.empty() && line.size() + word.size() + 1 > maximum_characters) {
+            lines.push_back(std::move(line));
+            line.clear();
+        }
+        if (!line.empty()) {
+            line += ' ';
+        }
+        line += word;
+        position = end == std::string_view::npos ? value.size() : end + 1;
+    }
+    if (!line.empty()) {
+        lines.push_back(std::move(line));
+    }
+    return lines;
+}
+
+void draw_weather_card(int left, int top, int right, std::string_view role,
+                       const AirportWeather& weather) {
+    constexpr int card_height = 132;
+    draw_rectangle(left, top, right, top - card_height, card);
+    const std::string title = weather.airport_id.empty()
+                                  ? std::string(role)
+                                  : std::string(role) + "  /  " + weather.airport_id;
+    draw_text(left + 18, top - 29, title, text_primary);
+
+    if (weather.airport_id.empty()) {
+        draw_text(left + 18, top - 60, "Airport not found in the active route", text_muted);
+        return;
+    }
+    if (weather.metar.empty()) {
+        draw_text(left + 18, top - 60, "No downloaded METAR is available", text_muted);
+        draw_text(left + 18, top - 84, "Enable X-Plane Real Weather and allow it to update", text_muted);
+        return;
+    }
+
+    const int available_width = std::max(252, right - left - 36);
+    const auto lines = wrap_text(weather.metar, static_cast<std::size_t>(available_width / 7));
+    const std::size_t visible_lines = std::min<std::size_t>(3, lines.size());
+    for (std::size_t index = 0; index < visible_lines; ++index) {
+        draw_text(left + 18, top - 60 - static_cast<int>(index) * 23, lines[index], text_muted);
+    }
+}
+
+void draw_weather_page(const WeatherSnapshot& weather, int left, int top, int right) {
+    const int card_right = std::max(left + 260, right - 28);
+    draw_text(left, top, "Route Weather", text_primary, xplmFont_Basic);
+    draw_text(left, top - 28, "Latest downloaded METARs from X-Plane Real Weather", text_muted);
+    if (!weather.available) {
+        draw_card(left, top - 62, card_right, top - 158,
+                  "Weather status", "Weather service is starting");
+        return;
+    }
+    draw_weather_card(left, top - 62, card_right, "Departure", weather.departure);
+    draw_weather_card(left, top - 212, card_right, "Destination", weather.destination);
+}
+
 void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                        const FlightPlanSnapshot& flight_plan,
+                       const WeatherSnapshot& weather,
                        int left, int top, int right, int bottom) {
     const int card_right = std::max(left + 260, right - 28);
     switch (page) {
@@ -195,6 +263,9 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         break;
     case EfbPage::flight_plan:
         draw_flight_plan_page(flight_plan, left, top, right);
+        break;
+    case EfbPage::weather:
+        draw_weather_page(weather, left, top, right);
         break;
     case EfbPage::aircraft:
         draw_text(left, top, "Aircraft", text_primary, xplmFont_Basic);
@@ -219,22 +290,23 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         draw_text(left, top, "About OpenEFB", text_primary, xplmFont_Basic);
         draw_text(left, top - 28, "An open-source electronic flight bag for X-Plane 12.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Version", "0.4.0 - M4 flight plan");
+                  "Version", "0.5.0 - M5 route weather");
         draw_card(left, top - 178, card_right, top - 274,
                   "Project", "Built in the open for the flight-sim community");
         break;
     }
 
-    draw_text(left, bottom + 22, "OPEN EFB  /  M2", text_muted);
+    draw_text(left, bottom + 22, "OPEN EFB  /  M5", text_muted);
 }
 
 } // namespace
 
 std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, TelemetryModel& telemetry_model,
                                                     FlightPlanModel& flight_plan_model,
+                                                    WeatherModel& weather_model,
                                                     XPlanePreferences& preferences) {
     auto window = std::unique_ptr<XPlaneWindow>(
-        new XPlaneWindow(ui_model, telemetry_model, flight_plan_model, preferences));
+        new XPlaneWindow(ui_model, telemetry_model, flight_plan_model, weather_model, preferences));
     if (!window->window_id_) {
         return nullptr;
     }
@@ -243,9 +315,11 @@ std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, Telemetry
 
 XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
                            FlightPlanModel& flight_plan_model,
+                           WeatherModel& weather_model,
                            XPlanePreferences& preferences)
     : ui_model_(ui_model), telemetry_model_(telemetry_model),
-      flight_plan_model_(flight_plan_model), preferences_(preferences) {
+      flight_plan_model_(flight_plan_model), weather_model_(weather_model),
+      preferences_(preferences) {
     WindowGeometry geometry;
     if (const auto stored = preferences_.load_geometry()) {
         geometry = *stored;
@@ -348,6 +422,7 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
     const int content_left = left + sidebar_width + 30;
     const int content_top = top - status_bar_height - 38;
     draw_page_content(ui_model_.active_page(), telemetry, flight_plan_model_.snapshot(),
+                      weather_model_.snapshot(),
                       content_left, content_top, right, bottom);
 }
 

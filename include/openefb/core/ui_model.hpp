@@ -8,6 +8,7 @@ namespace openefb {
 enum class EfbPage {
     home,
     flight_plan,
+    weather,
     aircraft,
     settings,
     about,
@@ -24,7 +25,7 @@ inline constexpr int navigation_top = 84;
 inline constexpr int navigation_item_height = 44;
 inline constexpr int navigation_item_gap = 8;
 
-[[nodiscard]] const std::array<NavigationItem, 5>& navigation_items() noexcept;
+[[nodiscard]] const std::array<NavigationItem, 6>& navigation_items() noexcept;
 
 class UiModel final {
 public:
