@@ -18,10 +18,11 @@ original open-source code and visuals.
   lookup, add/remove/reorder controls, draft safety, and explicit FMS Apply
 - M10: offline airport browsing with runways, surfaces, COM frequencies, and
   installed SID, STAR, and approach names
+- M11: switchable Home map overlays for endpoint weather, route airports and
+  navaids, and installed OpenAIR polygons, circles, and arcs
 
 ## Planned operational workflow
 
-- M11: operational map overlays for weather, airports, navaids, and airspace
 - M12: aircraft-aware weight and balance, fuel planning, and performance tools
 - M13: charts, aircraft documents, checklists, notes, and flight briefing
 - M14: route import/export, settings, accessibility, and cross-platform polish

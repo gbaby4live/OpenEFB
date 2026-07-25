@@ -14,6 +14,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cctype>
 #include <cmath>
@@ -581,8 +582,86 @@ void draw_map_style_button(int left, int top, int right, std::string_view label,
     draw_text(left + 11, top - 17, label, selected ? text_primary : text_muted);
 }
 
+struct MapLayerButton {
+    MapLayer layer;
+    std::string_view label;
+};
+
+constexpr std::array map_layer_buttons{
+    MapLayerButton{MapLayer::weather, "WX"},
+    MapLayerButton{MapLayer::airports, "APT"},
+    MapLayerButton{MapLayer::navaids, "NAV"},
+    MapLayerButton{MapLayer::airspace, "AIR"},
+};
+
+int map_layer_buttons_left(const HomeMapGeometry& panel) {
+    const int topo_left = panel.right - 10 - 64;
+    const int street_left = topo_left - 6 - 70;
+    return street_left - 4 - static_cast<int>(map_layer_buttons.size()) * 46;
+}
+
+Color airspace_color(std::string_view class_code) {
+    if (class_code == "B" || class_code == "C") return {0.30F, 0.65F, 1.0F, 0.92F};
+    if (class_code == "D") return {0.70F, 0.45F, 1.0F, 0.92F};
+    if (class_code == "P" || class_code == "R" || class_code == "Q")
+        return {1.0F, 0.36F, 0.24F, 0.95F};
+    return {1.0F, 0.72F, 0.25F, 0.85F};
+}
+
+void draw_airspace_overlay(const AirspaceSnapshot& airspace, const MovingMapModel& map,
+                           const TelemetrySnapshot& telemetry, int center_x, int center_y,
+                           double pixels_per_nm, int left, int top, int right, int bottom) {
+    if (airspace.state != AirspaceLoadState::ready || !airspace.zones) return;
+    std::size_t rendered_zones = 0;
+    std::size_t rendered_segments = 0;
+    for (const auto& zone : *airspace.zones) {
+        if (rendered_zones >= 120 || rendered_segments >= 1800 || zone.boundary.size() < 2) break;
+        bool visible = false;
+        ScreenPoint label_point;
+        for (std::size_t index = 1; index <= zone.boundary.size(); ++index) {
+            const auto& first = zone.boundary[index - 1];
+            const auto& second = zone.boundary[index % zone.boundary.size()];
+            auto point_1 = map_screen_point(map, telemetry, first.latitude_degrees,
+                                            first.longitude_degrees, center_x, center_y, pixels_per_nm);
+            auto point_2 = map_screen_point(map, telemetry, second.latitude_degrees,
+                                            second.longitude_degrees, center_x, center_y, pixels_per_nm);
+            if (!point_1.valid || !point_2.valid) continue;
+            double x_1 = point_1.x, y_1 = point_1.y, x_2 = point_2.x, y_2 = point_2.y;
+            if (clip_line(x_1, y_1, x_2, y_2, left, top, right, bottom)) {
+                draw_line(x_1, y_1, x_2, y_2, airspace_color(zone.class_code), 1.5F);
+                if (!visible) label_point = {true, x_1, y_1};
+                visible = true;
+                ++rendered_segments;
+            }
+            if (rendered_segments >= 1800) break;
+        }
+        if (visible) {
+            if (rendered_zones < 20 && label_point.x < right - 130 && label_point.y < top - 15) {
+                std::string label = zone.class_code;
+                if (!zone.name.empty()) label += "  " + zone.name.substr(0, 22);
+                draw_text(static_cast<int>(label_point.x) + 3, static_cast<int>(label_point.y) - 3,
+                          label, airspace_color(zone.class_code));
+            }
+            ++rendered_zones;
+        }
+    }
+}
+
+void draw_circle_marker(int x, int y, Color color) {
+    draw_range_ring(x, y, 6.0, color);
+    draw_rectangle(x - 2, y + 2, x + 2, y - 2, color);
+}
+
+void draw_diamond_marker(int x, int y, Color color) {
+    draw_line(x, y + 6, x + 6, y, color, 2.0F);
+    draw_line(x + 6, y, x, y - 6, color, 2.0F);
+    draw_line(x, y - 6, x - 6, y, color, 2.0F);
+    draw_line(x - 6, y, x, y + 6, color, 2.0F);
+}
+
 void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot& flight_plan,
                    const RouteProgressSnapshot& progress, const FuelSnapshot& fuel,
+                   const WeatherSnapshot& weather, const AirspaceSnapshot& airspace,
                    const MovingMapModel& map, XPlaneMapTiles& tiles,
                    int left, int top, int right, int bottom) {
     draw_text(left, top, "Live Moving Map", text_primary, xplmFont_Basic);
@@ -603,6 +682,13 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
                           map.style() == MapStyle::street);
     draw_map_style_button(topo_left, panel.top - 7, topo_right, "Topo",
                           map.style() == MapStyle::topographic);
+
+    int layer_left = map_layer_buttons_left(panel);
+    for (const auto& button : map_layer_buttons) {
+        draw_map_style_button(layer_left, panel.top - 7, layer_left + 42, button.label,
+                              map.layer_enabled(button.layer));
+        layer_left += 46;
+    }
 
     char range_label[32]{};
     std::snprintf(range_label, sizeof(range_label), "RANGE %.0f NM", map.range_nm());
@@ -627,6 +713,11 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
     draw_range_ring(center_x, center_y, radius_pixels / 3.0, map_grid);
     draw_range_ring(center_x, center_y, radius_pixels * 2.0 / 3.0, map_grid);
     draw_range_ring(center_x, center_y, radius_pixels, map_grid);
+
+    if (map.layer_enabled(MapLayer::airspace)) {
+        draw_airspace_overlay(airspace, map, telemetry, center_x, center_y, pixels_per_nm,
+                              map_left, map_top, map_right, map_bottom);
+    }
 
     std::vector<ScreenPoint> route_points;
     route_points.reserve(flight_plan.legs.size());
@@ -658,13 +749,31 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
         }
         const auto& leg = flight_plan.legs[index];
         const Color waypoint_color = leg.active ? accent : text_primary;
-        draw_rectangle(static_cast<int>(point.x) - 3, static_cast<int>(point.y) + 3,
-                       static_cast<int>(point.x) + 3, static_cast<int>(point.y) - 3,
-                       waypoint_color);
+        const bool airport_visible = leg.kind == WaypointKind::airport &&
+                                     map.layer_enabled(MapLayer::airports);
+        const bool navaid_visible = (leg.kind == WaypointKind::vor || leg.kind == WaypointKind::ndb ||
+                                     leg.kind == WaypointKind::fix) && map.layer_enabled(MapLayer::navaids);
+        if (airport_visible) draw_circle_marker(static_cast<int>(point.x), static_cast<int>(point.y), waypoint_color);
+        else if (navaid_visible) draw_diamond_marker(static_cast<int>(point.x), static_cast<int>(point.y), waypoint_color);
+        else draw_rectangle(static_cast<int>(point.x) - 3, static_cast<int>(point.y) + 3,
+                            static_cast<int>(point.x) + 3, static_cast<int>(point.y) - 3,
+                            waypoint_color);
         const bool label = leg.active || index == 0 || index + 1 == route_points.size();
         if (label && point.x < map_right - 80 && point.y < map_top - 18) {
             draw_text(static_cast<int>(point.x) + 8, static_cast<int>(point.y) + 5,
                       leg.identifier, waypoint_color);
+        }
+        if (map.layer_enabled(MapLayer::weather) && leg.kind == WaypointKind::airport) {
+            const bool endpoint = leg.identifier == weather.departure.airport_id ||
+                                  leg.identifier == weather.destination.airport_id;
+            if (endpoint) {
+                const bool report = (leg.identifier == weather.departure.airport_id && !weather.departure.metar.empty()) ||
+                                    (leg.identifier == weather.destination.airport_id && !weather.destination.metar.empty());
+                const Color weather_color = report ? connected : Color{1.0F, 0.72F, 0.25F, 1.0F};
+                draw_range_ring(static_cast<int>(point.x), static_cast<int>(point.y), 11.0, weather_color);
+                if (point.x < map_right - 35) draw_text(static_cast<int>(point.x) + 13,
+                                                        static_cast<int>(point.y) - 7, "WX", weather_color);
+            }
         }
     }
 
@@ -793,13 +902,15 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                        const FuelSnapshot& fuel,
                        const RouteProgressSnapshot& route_progress,
                        const WeatherSnapshot& weather,
+                       const AirspaceSnapshot& airspace,
                        const MovingMapModel& moving_map,
                        XPlaneMapTiles& map_tiles,
                        int left, int top, int right, int bottom) {
     const int card_right = std::max(left + 260, right - 28);
     switch (page) {
     case EfbPage::home:
-        draw_home_map(telemetry, flight_plan, route_progress, fuel, moving_map, map_tiles,
+        draw_home_map(telemetry, flight_plan, route_progress, fuel, weather, airspace,
+                      moving_map, map_tiles,
                       left, top, right, bottom);
         break;
     case EfbPage::flight_plan:
@@ -840,13 +951,13 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         draw_text(left, top, "About OpenEFB", text_primary, xplmFont_Basic);
         draw_text(left, top - 28, "An open-source electronic flight bag for X-Plane 12.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Version", "0.10.0 - M10 airport information");
+                  "Version", "0.11.0 - M11 operational map overlays");
         draw_card(left, top - 178, card_right, top - 274,
                   "Project", "Built in the open for the flight-sim community");
         break;
     }
 
-    draw_text(left, bottom + 22, "OPEN EFB  /  M10", text_muted);
+    draw_text(left, bottom + 22, "OPEN EFB  /  M11", text_muted);
 }
 
 } // namespace
@@ -857,6 +968,7 @@ std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, Telemetry
                                                     XPlaneFlightPlan& xplane_flight_plan,
                                                     AirportInfoModel& airport_info_model,
                                                     XPlaneAirportData& xplane_airport_data,
+                                                    AirspaceModel& airspace_model,
                                                     FuelModel& fuel_model,
                                                     MovingMapModel& moving_map_model,
                                                     RouteProgressModel& route_progress_model,
@@ -865,6 +977,7 @@ std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, Telemetry
     auto window = std::unique_ptr<XPlaneWindow>(
         new XPlaneWindow(ui_model, telemetry_model, flight_plan_model, flight_plan_editor,
                          xplane_flight_plan, airport_info_model, xplane_airport_data,
+                         airspace_model,
                          fuel_model, moving_map_model,
                          route_progress_model,
                          weather_model, preferences));
@@ -880,6 +993,7 @@ XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
                            XPlaneFlightPlan& xplane_flight_plan,
                            AirportInfoModel& airport_info_model,
                            XPlaneAirportData& xplane_airport_data,
+                           AirspaceModel& airspace_model,
                            FuelModel& fuel_model,
                            MovingMapModel& moving_map_model,
                            RouteProgressModel& route_progress_model,
@@ -888,7 +1002,7 @@ XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
     : ui_model_(ui_model), telemetry_model_(telemetry_model),
       flight_plan_model_(flight_plan_model), flight_plan_editor_(flight_plan_editor),
       xplane_flight_plan_(xplane_flight_plan), airport_info_model_(airport_info_model),
-      xplane_airport_data_(xplane_airport_data), fuel_model_(fuel_model),
+      xplane_airport_data_(xplane_airport_data), airspace_model_(airspace_model), fuel_model_(fuel_model),
       moving_map_model_(moving_map_model),
       route_progress_model_(route_progress_model),
       weather_model_(weather_model),
@@ -998,7 +1112,7 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
                       flight_plan_editor_,
                       airport_query_, airport_info_model_.snapshot(),
                       fuel_model_.snapshot(), route_progress_model_.snapshot(),
-                      weather_model_.snapshot(), moving_map_model_,
+                      weather_model_.snapshot(), airspace_model_.snapshot(), moving_map_model_,
                       map_tiles_,
                       content_left, content_top, right, bottom);
 }
@@ -1242,6 +1356,14 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
         const int street_right = topo_left - 6;
         const int street_left = street_right - 70;
         if (y <= panel.top - 7 && y >= panel.top - 32) {
+            int layer_left = map_layer_buttons_left(panel);
+            for (const auto& button : map_layer_buttons) {
+                if (x >= layer_left && x <= layer_left + 42) {
+                    window->moving_map_model_.toggle_layer(button.layer);
+                    return 1;
+                }
+                layer_left += 46;
+            }
             if (x >= street_left && x <= street_right) {
                 window->moving_map_model_.select_style(MapStyle::street);
                 return 1;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "openefb/core/flight_plan_model.hpp"
+#include "openefb/core/airspace_model.hpp"
 #include "openefb/core/flight_plan_editor.hpp"
 #include "openefb/core/airport_info.hpp"
 #include "openefb/core/fuel_model.hpp"
@@ -30,6 +31,7 @@ public:
                                                  XPlaneFlightPlan& xplane_flight_plan,
                                                  AirportInfoModel& airport_info_model,
                                                  XPlaneAirportData& xplane_airport_data,
+                                                 AirspaceModel& airspace_model,
                                                  FuelModel& fuel_model,
                                                  MovingMapModel& moving_map_model,
                                                  RouteProgressModel& route_progress_model,
@@ -57,6 +59,7 @@ private:
                  XPlaneFlightPlan& xplane_flight_plan,
                  AirportInfoModel& airport_info_model,
                  XPlaneAirportData& xplane_airport_data,
+                 AirspaceModel& airspace_model,
                  FuelModel& fuel_model,
                  MovingMapModel& moving_map_model,
                  RouteProgressModel& route_progress_model,
@@ -85,6 +88,7 @@ private:
     XPlaneFlightPlan& xplane_flight_plan_;
     AirportInfoModel& airport_info_model_;
     XPlaneAirportData& xplane_airport_data_;
+    AirspaceModel& airspace_model_;
     FuelModel& fuel_model_;
     MovingMapModel& moving_map_model_;
     RouteProgressModel& route_progress_model_;

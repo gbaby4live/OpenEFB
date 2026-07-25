@@ -35,6 +35,15 @@ MapStyle MovingMapModel::style() const noexcept { return style_; }
 
 void MovingMapModel::select_style(MapStyle style) noexcept { style_ = style; }
 
+bool MovingMapModel::layer_enabled(MapLayer layer) const noexcept {
+    return layers_[static_cast<std::size_t>(layer)];
+}
+
+void MovingMapModel::toggle_layer(MapLayer layer) noexcept {
+    const auto index = static_cast<std::size_t>(layer);
+    layers_[index] = !layers_[index];
+}
+
 bool MovingMapModel::zoom_in() noexcept {
     if (zoom_level_ == 0) {
         return false;

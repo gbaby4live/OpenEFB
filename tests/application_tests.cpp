@@ -1,4 +1,5 @@
 #include "openefb/core/application.hpp"
+#include "openefb/core/airspace_model.hpp"
 #include "openefb/core/airport_info.hpp"
 #include "openefb/core/flight_plan_model.hpp"
 #include "openefb/core/flight_plan_editor.hpp"
@@ -328,6 +329,14 @@ int main() {
     moving_map.select_style(openefb::MapStyle::topographic);
     require(moving_map.style() == openefb::MapStyle::topographic,
             "moving map can select topographic tiles");
+    require(moving_map.layer_enabled(openefb::MapLayer::weather) &&
+                moving_map.layer_enabled(openefb::MapLayer::airports) &&
+                moving_map.layer_enabled(openefb::MapLayer::navaids) &&
+                !moving_map.layer_enabled(openefb::MapLayer::airspace),
+            "operational overlays have readable defaults");
+    moving_map.toggle_layer(openefb::MapLayer::airspace);
+    require(moving_map.layer_enabled(openefb::MapLayer::airspace),
+            "airspace overlay can be enabled independently");
     require(moving_map.range_nm() == 40.0, "moving map starts at a useful regional range");
     require(moving_map.zoom_in() && moving_map.range_nm() == 20.0,
             "moving map can zoom in");
@@ -343,6 +352,32 @@ int main() {
     const auto dateline = moving_map.project(0.0, 179.5, 0.0, -179.5);
     require(dateline.valid && dateline.east_nm > 59.0 && dateline.east_nm < 61.0,
             "map projection follows the short path across the date line");
+
+    std::istringstream openair_data{
+        "* sample airspace\n"
+        "AC D\nAN TEST POLYGON\nAL SFC\nAH 4500 FT\n"
+        "DP 47:00:00 N 122:00:00 W\n"
+        "DP 47:10:00 N 122:00:00 W\n"
+        "DP 47:10:00 N 122:10:00 W\n"
+        "AC R\nAN TEST CIRCLE\nAL 1000 FT\nAH FL180\n"
+        "V X=46:30:00 N 121:30:00 W\nDC 5\n"
+        "AC C\nAN TEST ARC\nV X=46:00:00 N 121:00:00 W\nV D=-\nDA 10,90,0\n"};
+    const auto airspace_zones = openefb::parse_openair(openair_data);
+    require(airspace_zones.size() == 3 && airspace_zones[0].class_code == "D" &&
+                airspace_zones[0].boundary.size() == 3,
+            "OpenAIR parser reads polygon classes and DMS coordinates");
+    require(airspace_zones[1].boundary.size() >= 40 &&
+                airspace_zones[2].boundary.size() >= 10,
+            "OpenAIR parser expands circles and directional arcs");
+    openefb::AirspaceModel airspace_model;
+    airspace_model.begin_load();
+    require(airspace_model.snapshot().state == openefb::AirspaceLoadState::loading,
+            "airspace model exposes background loading state");
+    airspace_model.update(openefb::AirspaceLoadState::ready,
+        std::make_shared<const std::vector<openefb::AirspaceZone>>(airspace_zones), "3 zones loaded");
+    require(airspace_model.snapshot().zones->size() == 3 &&
+                airspace_model.snapshot().revision == 2,
+            "airspace model publishes immutable parsed snapshots");
 
     std::cout << "OpenEFB core tests passed\n";
     return EXIT_SUCCESS;

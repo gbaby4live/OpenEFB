@@ -152,3 +152,17 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
   procedures priority over the default navdata cycle.
 - The Airports page displays loading, not-found, and error states explicitly;
   filesystem work never runs inside an XPLM draw or input callback.
+
+## M11: operational map overlays
+
+- `MovingMapModel` owns four independent visibility switches for weather,
+  airports, navaids, and airspace; style and zoom remain independent.
+- `AirspaceModel` publishes immutable, thread-safe snapshots of parsed OpenAIR
+  zones. The parser supports polygon points, circles, and clockwise or
+  counter-clockwise arcs while placing hard limits on malformed input.
+- `XPlaneAirspace` reads Custom Data before default data on a worker thread and
+  never calls XPLM outside construction on the simulator thread.
+- The renderer clips every boundary segment, caps per-frame overlay work, and
+  keeps the route and aircraft above the optional operational layers.
+- WX currently indicates METAR availability at route endpoint airports; it is
+  intentionally not presented as precipitation radar.

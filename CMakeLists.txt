@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(OpenEFB VERSION 0.10.0 LANGUAGES CXX)
+project(OpenEFB VERSION 0.11.0 LANGUAGES CXX)
 
 option(OPEN_EFB_BUILD_TESTS "Build OpenEFB unit tests" ON)
 set(OPEN_EFB_XPLANE_SDK_PATH "" CACHE PATH "Path to the X-Plane SDK root")
@@ -10,6 +10,7 @@ if(MSVC)
 endif()
 
 add_library(openefb_core STATIC
+    src/core/airspace_model.cpp
     src/core/airport_info.cpp
     src/core/application.cpp
     src/core/flight_plan_model.cpp
@@ -37,6 +38,7 @@ endif()
 if(OPEN_EFB_XPLANE_SDK_PATH)
     add_library(openefb_plugin MODULE
         src/xplane/plugin.cpp
+        src/xplane/xplane_airspace.cpp
         src/xplane/xplane_airport_data.cpp
         src/xplane/xplane_flight_plan.cpp
         src/xplane/xplane_fuel.cpp
