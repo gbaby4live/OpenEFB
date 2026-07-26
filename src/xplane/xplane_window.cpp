@@ -1290,13 +1290,13 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         draw_text(left, top, "About OpenEFB", text_primary, xplmFont_Basic);
         draw_text(left, top - 28, "An open-source electronic flight bag for X-Plane 12.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Version", "0.14.1 - M14 named route files and accessibility");
+                  "Version", "0.15.0 - M15 raster display hardening");
         draw_card(left, top - 178, card_right, top - 274,
                   "Project", "Built in the open for the flight-sim community");
         break;
     }
 
-    draw_text(left, bottom + 22, "OPEN EFB  /  M14", text_muted);
+    draw_text(left, bottom + 22, "OPEN EFB  /  M15", text_muted);
 }
 
 } // namespace

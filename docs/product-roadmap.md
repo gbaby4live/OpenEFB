@@ -27,10 +27,17 @@ original open-source code and visuals.
   user-provided local chart and aircraft-document library; revised with stable
   DEP/DEST filters, online-first weather fallbacks, installed navigation symbols,
   and confirmed map-to-FMS airport navigation
+- M14: X-Plane `.fms` route import/export with departure-destination filenames,
+  persistent high-contrast text, and comfort-size window preferences
+
+## Active release hardening
+
+- M15: shared raster display state, power-of-two PDF canvases, and visible map
+  tile upload diagnostics across X-Plane graphics backends
 
 ## Planned operational workflow
 
-- M14: route import/export, settings, accessibility, and cross-platform polish
+- Cross-platform packaging, signed release artifacts, and final simulator validation
 
 ## Release hardening blockers
 

@@ -140,7 +140,7 @@ std::vector<std::uint8_t> download_tile(const TileKey& key) {
                               : L"a.tile.opentopomap.org";
     const std::wstring path = L"/" + std::to_wstring(key.zoom) + L"/" +
                               std::to_wstring(key.x) + L"/" + std::to_wstring(key.y) + L".png";
-    HINTERNET session = WinHttpOpen(L"OpenEFB/0.14.1 (+https://github.com/Gbaby4live/OpenEFB)",
+    HINTERNET session = WinHttpOpen(L"OpenEFB/0.15.0 (+https://github.com/Gbaby4live/OpenEFB)",
                                     WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) {
@@ -256,7 +256,7 @@ public:
     }
 
     void draw(MapStyle style, const MapTileViewport& viewport) {
-        XPLMSetGraphicsState(0, 1, 0, 0, 0, 0, 0);
+        XPLMSetGraphicsState(0, 1, 0, 0, 1, 0, 0);
         upload_ready();
         const int zoom = tile_zoom(viewport);
         const int count = 1 << zoom;
@@ -324,7 +324,7 @@ public:
                     }
                 }
                 glEnd();
-                XPLMSetGraphicsState(0, 1, 0, 0, 0, 0, 0);
+                XPLMSetGraphicsState(0, 1, 0, 0, 1, 0, 0);
                 glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
                 XPLMBindTexture2d(static_cast<int>(found->second.id), 0);
                 glBegin(GL_QUADS);
@@ -373,7 +373,7 @@ private:
             XPLMGenerateTextureNumbers(&texture_number, 1);
             const GLuint texture = static_cast<GLuint>(texture_number);
             XPLMBindTexture2d(texture_number, 0);
-            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
@@ -399,11 +399,13 @@ private:
                 }
             }
             textures_.emplace(tile.key, std::move(stored));
+            ++tiles_uploaded_;
             source_.store(tile.source);
             {
                 std::lock_guard lock(mutex_);
-                status_text_ = tile.source == MapTileSource::online ? "MAP ONLINE"
-                                                                   : "MAP CACHE";
+                status_text_ = (tile.source == MapTileSource::online ? "MAP ONLINE  "
+                                                                     : "MAP CACHE  ") +
+                               std::to_string(tiles_uploaded_) + " TILES";
             }
         }
     }
@@ -473,6 +475,7 @@ private:
     std::atomic<MapTileSource> source_{MapTileSource::vector_only};
     std::string status_text_{"REQUESTING MAP TILES"};
     bool stopping_{false};
+    std::size_t tiles_uploaded_{0};
     std::thread worker_;
 
 public:

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(OpenEFB VERSION 0.14.1 LANGUAGES CXX)
+project(OpenEFB VERSION 0.15.0 LANGUAGES CXX)
 
 option(OPEN_EFB_BUILD_TESTS "Build OpenEFB unit tests" ON)
 set(OPEN_EFB_XPLANE_SDK_PATH "" CACHE PATH "Path to the X-Plane SDK root")

@@ -72,7 +72,8 @@ the textured drawing state before upload. Briefing now has only Departure and
 Destination airport views. PDF charts render inside OpenEFB with Previous, Next,
 and Close controls using the Windows PDF renderer included with the operating system.
 
-Version 0.14.1 adds X-Plane `.fms` route import and departure-destination named
+Version 0.15.0 hardens X-Plane raster display for map tiles and in-app PDF pages.
+It also adds X-Plane `.fms` route import and departure-destination named
 exports plus persistent
 high-contrast and comfort-size display preferences. It also generates each airport
 briefing as an in-app PDF, reports FAA chart

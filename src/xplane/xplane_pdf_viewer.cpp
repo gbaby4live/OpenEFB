@@ -42,6 +42,12 @@ struct RenderedPage {
     std::string status;
 };
 
+int texture_extent(int value) {
+    int extent = 1;
+    while (extent < value && extent < 4096) extent *= 2;
+    return extent;
+}
+
 #if IBM
 RenderedPage decode_png(const std::vector<std::uint8_t>& png, int page, int page_count) {
     IWICImagingFactory* factory{};
@@ -189,13 +195,15 @@ public:
         const double draw_right = draw_left + draw_width;
         const double draw_bottom = bottom + (available_height - draw_height) * 0.5;
         const double draw_top = draw_bottom + draw_height;
-        XPLMSetGraphicsState(0, 1, 0, 0, 0, 0, 0);
+        XPLMSetGraphicsState(0, 1, 0, 0, 1, 0, 0);
         XPLMBindTexture2d(static_cast<int>(texture_), 0);
         glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
         glBegin(GL_QUADS);
-        glTexCoord2f(0.0F, 1.0F); glVertex2d(draw_left, draw_bottom);
-        glTexCoord2f(1.0F, 1.0F); glVertex2d(draw_right, draw_bottom);
-        glTexCoord2f(1.0F, 0.0F); glVertex2d(draw_right, draw_top);
+        const float maximum_u = static_cast<float>(width_) / texture_width_;
+        const float maximum_v = static_cast<float>(height_) / texture_height_;
+        glTexCoord2f(0.0F, maximum_v); glVertex2d(draw_left, draw_bottom);
+        glTexCoord2f(maximum_u, maximum_v); glVertex2d(draw_right, draw_bottom);
+        glTexCoord2f(maximum_u, 0.0F); glVertex2d(draw_right, draw_top);
         glTexCoord2f(0.0F, 0.0F); glVertex2d(draw_left, draw_top);
         glEnd();
         XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0);
@@ -218,15 +226,26 @@ private:
         int texture_number{};
         XPLMGenerateTextureNumbers(&texture_number, 1);
         texture_ = static_cast<GLuint>(texture_number);
-        XPLMSetGraphicsState(0, 1, 0, 0, 0, 0, 0);
+        XPLMSetGraphicsState(0, 1, 0, 0, 1, 0, 0);
         XPLMBindTexture2d(texture_number, 0);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        texture_width_ = texture_extent(ready.width);
+        texture_height_ = texture_extent(ready.height);
+        std::vector<std::uint8_t> texture_pixels(
+            static_cast<std::size_t>(texture_width_) * texture_height_ * 4, 255);
+        for (int row = 0; row < ready.height; ++row) {
+            const auto source = ready.pixels.begin() +
+                static_cast<std::ptrdiff_t>(row) * ready.width * 4;
+            const auto destination = texture_pixels.begin() +
+                static_cast<std::ptrdiff_t>(row) * texture_width_ * 4;
+            std::copy_n(source, static_cast<std::size_t>(ready.width) * 4, destination);
+        }
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ready.width, ready.height, 0,
-                     GL_BGRA, GL_UNSIGNED_BYTE, ready.pixels.data());
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture_width_, texture_height_, 0,
+                     GL_BGRA, GL_UNSIGNED_BYTE, texture_pixels.data());
         width_ = ready.width;
         height_ = ready.height;
     }
@@ -265,6 +284,8 @@ private:
     GLuint texture_{};
     int width_{};
     int height_{};
+    int texture_width_{};
+    int texture_height_{};
     int requested_page_{};
     int current_page_{};
     int page_count_{};

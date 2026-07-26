@@ -177,7 +177,7 @@ std::string current_faa_cycle() {
 
 #if IBM
 std::vector<std::uint8_t> download_faa_file(const std::wstring& path, std::size_t maximum_size) {
-    HINTERNET session = WinHttpOpen(L"OpenEFB/0.14.1 (+https://github.com/Gbaby4live/OpenEFB)",
+    HINTERNET session = WinHttpOpen(L"OpenEFB/0.15.0 (+https://github.com/Gbaby4live/OpenEFB)",
                                     WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) return {};
