@@ -91,4 +91,23 @@ MapOffset MovingMapModel::project(double center_latitude_degrees,
     return offset;
 }
 
+MapCoordinate MovingMapModel::unproject(double center_latitude_degrees,
+                                        double center_longitude_degrees,
+                                        double east_nm,
+                                        double north_nm) const noexcept {
+    MapCoordinate coordinate;
+    if (!valid_coordinates(center_latitude_degrees, center_longitude_degrees) ||
+        !std::isfinite(east_nm) || !std::isfinite(north_nm)) return coordinate;
+    const double cosine = std::cos(center_latitude_degrees * pi / 180.0);
+    if (std::abs(cosine) < 0.001) return coordinate;
+    coordinate.latitude_degrees = center_latitude_degrees + north_nm / nautical_miles_per_degree;
+    coordinate.longitude_degrees = center_longitude_degrees +
+        east_nm / (nautical_miles_per_degree * cosine);
+    while (coordinate.longitude_degrees > 180.0) coordinate.longitude_degrees -= 360.0;
+    while (coordinate.longitude_degrees < -180.0) coordinate.longitude_degrees += 360.0;
+    coordinate.valid = valid_coordinates(coordinate.latitude_degrees,
+                                         coordinate.longitude_degrees);
+    return coordinate;
+}
+
 } // namespace openefb

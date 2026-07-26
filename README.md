@@ -39,7 +39,7 @@ After installing the built `OpenEFB` plugin package, open it from:
 For a local Windows build, copy the generated `build/OpenEFB` directory into
 `X-Plane 12/Resources/plugins` before starting the simulator.
 
-The M13 shell provides a dark tablet layout with a live UTC status bar and nine
+The integrated shell provides a dark tablet layout with a live UTC status bar and nine
 mouse-selectable pages: Home, Flight Plan, Airports, Progress, Weather, Planning,
 Briefing, Settings, and About. The Fuel page is now Aircraft Planning, combining
 fuel with weight-and-balance information. Window position and size are saved in X-Plane's
@@ -72,14 +72,17 @@ the textured drawing state before upload. Briefing now has only Departure and
 Destination airport views. PDF charts render inside OpenEFB with Previous, Next,
 and Close controls using the Windows PDF renderer included with the operating system.
 
-Version 0.15.0 hardens X-Plane raster display for map tiles and in-app PDF pages.
+Version 1.0.0 RC1 is the integrated acceptance build. It hardens X-Plane raster
+display for map tiles and in-app PDF pages, adds repeatable release packaging,
+and is gated by the complete simulator checklist in `docs/acceptance-test.md`.
 It also adds X-Plane `.fms` route import and departure-destination named
 exports plus persistent
 high-contrast and comfort-size display preferences. It also generates each airport
 briefing as an in-app PDF, reports FAA chart
 download status inside the CHART list, and enables current Windows TLS for FAA
-downloads. Map and PDF page pixels are forced opaque and their basemap/page pass
-draws without alpha blending to avoid invisible textures in X-Plane's graphics bridge.
+downloads. Map and PDF page pixels are forced opaque and use a bounded
+geometry-based compatibility raster above the normal texture on graphics bridges
+that fail to composite uploaded plugin textures.
 
 Fuel flow is displayed in US gallons per hour using the standard avgas density
 of 6.0 lb per US gallon. Remaining fuel mass stays visible in kilograms and
@@ -113,7 +116,10 @@ the background so scanning large scenery files does not pause the simulator.
 Home now has independent WX, APT, NAV, and AIR switches. The installed X-Plane
 navigation database supplies nearby airport, VOR, NDB, and fix symbols in addition
 to the active route. Airport symbols are selectable; OpenEFB asks for confirmation
-before replacing the current FMS route with a direct route to that airport. WX highlights route endpoints that have current
+before replacing the current FMS route with a direct route to that airport. Any
+visible Street/Topo attraction or map location can also be
+selected for a confirmed coordinate direct-to without requiring a proprietary
+points-of-interest database. WX highlights route endpoints that have current
 METAR reports, and AIR draws installed X-Plane OpenAIR boundaries including
 polygons, circles, and directional arcs. Custom Data airspace takes priority
 over X-Plane's default file. Parsing happens in the background and on-screen

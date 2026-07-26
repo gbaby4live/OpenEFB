@@ -34,6 +34,8 @@ original open-source code and visuals.
 
 - M15: shared raster display state, power-of-two PDF canvases, and visible map
   tile upload diagnostics across X-Plane graphics backends
+- RC1: compatibility raster fallback, repeatable packaging, cross-platform core
+  CI, and one complete simulator acceptance test before final release
 
 ## Planned operational workflow
 

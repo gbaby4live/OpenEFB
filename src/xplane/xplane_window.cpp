@@ -696,7 +696,9 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
                    int left, int top, int right, int bottom) {
     hit_targets.clear();
     draw_text(left, top, "Live Moving Map", text_primary, xplmFont_Basic);
-    draw_text(left + 142, top, "OpenStreetMap basemap  /  mouse wheel to zoom", text_muted);
+    draw_text(left + 142, top,
+              "OpenStreetMap  /  wheel to zoom  /  click any map point for direct-to",
+              text_muted);
     const auto panel = home_map_geometry(left, top, right, bottom);
     const int map_left = panel.left + 3;
     const int map_right = panel.right - 3;
@@ -1290,13 +1292,13 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         draw_text(left, top, "About OpenEFB", text_primary, xplmFont_Basic);
         draw_text(left, top - 28, "An open-source electronic flight bag for X-Plane 12.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Version", "0.15.0 - M15 raster display hardening");
+                  "Version", "1.0.0 RC1 - integrated acceptance build");
         draw_card(left, top - 178, card_right, top - 274,
                   "Project", "Built in the open for the flight-sim community");
         break;
     }
 
-    draw_text(left, bottom + 22, "OPEN EFB  /  M15", text_muted);
+    draw_text(left, bottom + 22, "OPEN EFB  /  1.0 RC1", text_muted);
 }
 
 } // namespace
@@ -1997,6 +1999,32 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
         for (const auto& target : window->map_hit_targets_) {
             if (std::abs(x - target.x) <= 11 && std::abs(y - target.y) <= 11) {
                 window->pending_map_direct_to_ = target.leg;
+                window->map_action_message_.clear();
+                return 1;
+            }
+        }
+        const auto& telemetry = window->telemetry_model_.snapshot();
+        const int map_left = panel.left + 3;
+        const int map_right = panel.right - 3;
+        const int map_top = panel.tile_top;
+        const int map_bottom = panel.bottom + 3;
+        if (telemetry.available && x >= map_left && x <= map_right &&
+            y >= map_bottom && y <= map_top) {
+            const int center_x = (map_left + map_right) / 2;
+            const int center_y = (map_top + map_bottom) / 2;
+            const double radius_pixels = std::max(
+                40.0, std::min(map_right - map_left, map_top - map_bottom) * 0.46);
+            const double pixels_per_nm = radius_pixels / window->moving_map_model_.range_nm();
+            const auto coordinate = window->moving_map_model_.unproject(
+                telemetry.latitude_degrees, telemetry.longitude_degrees,
+                (x - center_x) / pixels_per_nm, (y - center_y) / pixels_per_nm);
+            if (coordinate.valid) {
+                FlightPlanLeg point;
+                point.identifier = "MAP POINT";
+                point.kind = WaypointKind::coordinate;
+                point.latitude_degrees = coordinate.latitude_degrees;
+                point.longitude_degrees = coordinate.longitude_degrees;
+                window->pending_map_direct_to_ = std::move(point);
                 window->map_action_message_.clear();
                 return 1;
             }

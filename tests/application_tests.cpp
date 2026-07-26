@@ -454,6 +454,11 @@ int main() {
     const auto portland = moving_map.project(47.449, -122.309, 45.589, -122.597);
     require(portland.valid && portland.east_nm < 0.0 && portland.north_nm < -100.0,
             "route points project to local nautical-mile offsets");
+    const auto round_trip = moving_map.unproject(47.449, -122.309,
+                                                  portland.east_nm, portland.north_nm);
+    require(round_trip.valid && std::abs(round_trip.latitude_degrees - 45.589) < 0.001 &&
+                std::abs(round_trip.longitude_degrees - (-122.597)) < 0.001,
+            "clickable map coordinates invert the moving-map projection");
     const auto dateline = moving_map.project(0.0, 179.5, 0.0, -179.5);
     require(dateline.valid && dateline.east_nm > 59.0 && dateline.east_nm < 61.0,
             "map projection follows the short path across the date line");

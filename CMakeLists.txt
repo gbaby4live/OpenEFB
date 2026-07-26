@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(OpenEFB VERSION 0.15.0 LANGUAGES CXX)
+project(OpenEFB VERSION 1.0.0 LANGUAGES CXX)
 
 option(OPEN_EFB_BUILD_TESTS "Build OpenEFB unit tests" ON)
 set(OPEN_EFB_XPLANE_SDK_PATH "" CACHE PATH "Path to the X-Plane SDK root")
@@ -111,9 +111,30 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/OpenEFB/64"
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/OpenEFB/64"
     )
+
+    add_custom_command(TARGET openefb_plugin POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/README.md" "${CMAKE_BINARY_DIR}/OpenEFB/README.md"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/LICENSE" "${CMAKE_BINARY_DIR}/OpenEFB/LICENSE"
+        VERBATIM
+    )
+
+    install(TARGETS openefb_plugin
+        LIBRARY DESTINATION OpenEFB/64
+        RUNTIME DESTINATION OpenEFB/64
+    )
+    install(FILES README.md LICENSE DESTINATION OpenEFB)
 else()
     message(STATUS "OPEN_EFB_XPLANE_SDK_PATH is not set; skipping the .xpl target")
 endif()
+
+set(CPACK_PACKAGE_NAME "OpenEFB")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_FILE_NAME "OpenEFB-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}")
+set(CPACK_GENERATOR "ZIP")
+set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
+include(CPack)
 
 if(OPEN_EFB_BUILD_TESTS)
     include(CTest)

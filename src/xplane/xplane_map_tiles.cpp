@@ -140,7 +140,7 @@ std::vector<std::uint8_t> download_tile(const TileKey& key) {
                               : L"a.tile.opentopomap.org";
     const std::wstring path = L"/" + std::to_wstring(key.zoom) + L"/" +
                               std::to_wstring(key.x) + L"/" + std::to_wstring(key.y) + L".png";
-    HINTERNET session = WinHttpOpen(L"OpenEFB/0.15.0 (+https://github.com/Gbaby4live/OpenEFB)",
+    HINTERNET session = WinHttpOpen(L"OpenEFB/1.0.0-rc1 (+https://github.com/Gbaby4live/OpenEFB)",
                                     WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) {
@@ -294,9 +294,19 @@ public:
                 const double u_right = (draw_right - tile_left) / tile_size;
                 const double v_top = (tile_top - draw_top) / tile_size;
                 const double v_bottom = (tile_top - draw_bottom) / tile_size;
-                // The decoded-tile color grid is drawn first with untextured
-                // geometry. It remains visible on graphics backends that accept
-                // plugin drawing but fail to composite an uploaded texture.
+                XPLMSetGraphicsState(0, 1, 0, 0, 1, 0, 0);
+                glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+                XPLMBindTexture2d(static_cast<int>(found->second.id), 0);
+                glBegin(GL_QUADS);
+                glTexCoord2d(u_left, v_bottom); glVertex2d(draw_left, draw_bottom);
+                glTexCoord2d(u_right, v_bottom); glVertex2d(draw_right, draw_bottom);
+                glTexCoord2d(u_right, v_top); glVertex2d(draw_right, draw_top);
+                glTexCoord2d(u_left, v_top); glVertex2d(draw_left, draw_top);
+                glEnd();
+
+                // Draw the decoded color grid after the texture. This guarantees
+                // a visible software-raster basemap on graphics bridges that
+                // accept plugin geometry but fail to composite uploaded pixels.
                 XPLMSetGraphicsState(0, 0, 0, 0, 0, 0, 0);
                 constexpr double cell_size = static_cast<double>(tile_size) / fallback_cells;
                 glBegin(GL_QUADS);
@@ -323,15 +333,6 @@ public:
                                    std::min(cell_top, static_cast<double>(viewport.top)));
                     }
                 }
-                glEnd();
-                XPLMSetGraphicsState(0, 1, 0, 0, 1, 0, 0);
-                glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-                XPLMBindTexture2d(static_cast<int>(found->second.id), 0);
-                glBegin(GL_QUADS);
-                glTexCoord2d(u_left, v_bottom); glVertex2d(draw_left, draw_bottom);
-                glTexCoord2d(u_right, v_bottom); glVertex2d(draw_right, draw_bottom);
-                glTexCoord2d(u_right, v_top); glVertex2d(draw_right, draw_top);
-                glTexCoord2d(u_left, v_top); glVertex2d(draw_left, draw_top);
                 glEnd();
             }
         }

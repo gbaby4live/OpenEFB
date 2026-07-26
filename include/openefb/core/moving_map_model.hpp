@@ -11,6 +11,12 @@ struct MapOffset {
     double north_nm{};
 };
 
+struct MapCoordinate {
+    bool valid{false};
+    double latitude_degrees{};
+    double longitude_degrees{};
+};
+
 enum class MapStyle {
     street,
     topographic,
@@ -40,6 +46,10 @@ public:
                                     double center_longitude_degrees,
                                     double latitude_degrees,
                                     double longitude_degrees) const noexcept;
+    [[nodiscard]] MapCoordinate unproject(double center_latitude_degrees,
+                                          double center_longitude_degrees,
+                                          double east_nm,
+                                          double north_nm) const noexcept;
 
 private:
     static constexpr std::array ranges_nm_{5.0, 10.0, 20.0, 40.0, 80.0, 160.0, 320.0};

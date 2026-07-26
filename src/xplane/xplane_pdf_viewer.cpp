@@ -21,6 +21,7 @@
 #endif
 
 #include <algorithm>
+#include <cmath>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -206,6 +207,32 @@ public:
         glTexCoord2f(maximum_u, 0.0F); glVertex2d(draw_right, draw_top);
         glTexCoord2f(0.0F, 0.0F); glVertex2d(draw_left, draw_top);
         glEnd();
+
+        // Compatibility raster: draw a bounded, downsampled page above the
+        // texture so documents remain readable when a graphics bridge accepts
+        // OpenGL geometry but does not composite plugin textures.
+        if (!fallback_.empty() && fallback_width_ > 0 && fallback_height_ > 0) {
+            XPLMSetGraphicsState(0, 0, 0, 0, 0, 0, 0);
+            const double cell_width = draw_width / fallback_width_;
+            const double cell_height = draw_height / fallback_height_;
+            glBegin(GL_QUADS);
+            for (int row = 0; row < fallback_height_; ++row) {
+                const double cell_top = draw_top - row * cell_height;
+                const double cell_bottom = draw_top - (row + 1) * cell_height;
+                for (int column = 0; column < fallback_width_; ++column) {
+                    const double cell_left = draw_left + column * cell_width;
+                    const double cell_right = draw_left + (column + 1) * cell_width;
+                    const auto index = static_cast<std::size_t>(
+                        (row * fallback_width_ + column) * 3);
+                    glColor3ub(fallback_[index], fallback_[index + 1], fallback_[index + 2]);
+                    glVertex2d(cell_left, cell_bottom);
+                    glVertex2d(cell_right, cell_bottom);
+                    glVertex2d(cell_right, cell_top);
+                    glVertex2d(cell_left, cell_top);
+                }
+            }
+            glEnd();
+        }
         XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0);
     }
 
@@ -248,6 +275,26 @@ private:
                      GL_BGRA, GL_UNSIGNED_BYTE, texture_pixels.data());
         width_ = ready.width;
         height_ = ready.height;
+        fallback_width_ = std::min(160, ready.width);
+        fallback_height_ = std::clamp(
+            static_cast<int>(std::lround(static_cast<double>(fallback_width_) *
+                                         ready.height / ready.width)), 1, 240);
+        fallback_.resize(static_cast<std::size_t>(fallback_width_) * fallback_height_ * 3);
+        for (int row = 0; row < fallback_height_; ++row) {
+            const int source_y = std::min(ready.height - 1,
+                row * ready.height / fallback_height_);
+            for (int column = 0; column < fallback_width_; ++column) {
+                const int source_x = std::min(ready.width - 1,
+                    column * ready.width / fallback_width_);
+                const auto source = static_cast<std::size_t>(
+                    (source_y * ready.width + source_x) * 4);
+                const auto destination = static_cast<std::size_t>(
+                    (row * fallback_width_ + column) * 3);
+                fallback_[destination] = ready.pixels[source + 2];
+                fallback_[destination + 1] = ready.pixels[source + 1];
+                fallback_[destination + 2] = ready.pixels[source];
+            }
+        }
     }
 
     void work() {
@@ -286,6 +333,9 @@ private:
     int height_{};
     int texture_width_{};
     int texture_height_{};
+    std::vector<std::uint8_t> fallback_;
+    int fallback_width_{};
+    int fallback_height_{};
     int requested_page_{};
     int current_page_{};
     int page_count_{};
