@@ -16,6 +16,7 @@
 #include "openefb/core/weather_model.hpp"
 #include "xplane_preferences.hpp"
 #include "xplane_map_tiles.hpp"
+#include "xplane_map_pois.hpp"
 #include "xplane_pdf_viewer.hpp"
 #include "xplane_flight_plan.hpp"
 #include "xplane_airport_data.hpp"
@@ -34,6 +35,18 @@ struct MapHitTarget {
     int x{};
     int y{};
     FlightPlanLeg leg;
+};
+
+struct PoiHitTarget {
+    int x{};
+    int y{};
+    MapPoi poi;
+};
+
+struct PendingMapNavigation {
+    FlightPlanLeg leg;
+    std::string name;
+    std::string detail;
 };
 
 class XPlaneWindow final : public WindowSurface {
@@ -126,10 +139,19 @@ private:
     WeatherModel& weather_model_;
     XPlanePreferences& preferences_;
     mutable XPlaneMapTiles map_tiles_;
+    mutable XPlaneMapPois map_pois_;
     mutable XPlanePdfViewer pdf_viewer_;
     mutable std::vector<MapHitTarget> map_hit_targets_;
-    std::optional<FlightPlanLeg> pending_map_direct_to_;
+    mutable std::vector<PoiHitTarget> poi_hit_targets_;
+    mutable std::optional<MapPoi> hovered_map_poi_;
+    std::optional<PendingMapNavigation> pending_map_navigation_;
     std::string map_action_message_;
+    bool map_dragging_{false};
+    bool map_drag_moved_{false};
+    int map_drag_start_x_{};
+    int map_drag_start_y_{};
+    double map_drag_start_latitude_{};
+    double map_drag_start_longitude_{};
     XPLMWindowID window_id_{nullptr};
     std::string airport_query_;
     DisplayPreferences display_preferences_;

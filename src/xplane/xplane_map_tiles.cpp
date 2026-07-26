@@ -83,13 +83,14 @@ double world_y(double latitude, int zoom) {
            static_cast<double>(tile_size * (1 << zoom));
 }
 
-int tile_zoom(const MapTileViewport& viewport) {
+int tile_zoom(MapStyle style, const MapTileViewport& viewport) {
     const double radius_pixels = std::max(40.0, std::min(viewport.right - viewport.left,
                                                          viewport.top - viewport.bottom) * 0.46);
     const double pixels_per_nm = radius_pixels / std::max(1.0, viewport.range_nm);
     const double latitude_scale = std::max(0.05, std::cos(clamp_latitude(viewport.latitude_degrees) * pi / 180.0));
     const double zoom = std::log2(21600.0 * latitude_scale * pixels_per_nm / tile_size);
-    return std::clamp(static_cast<int>(std::lround(zoom)), 2, 16);
+    const int maximum_zoom = style == MapStyle::street ? 19 : 17;
+    return std::clamp(static_cast<int>(std::lround(zoom)), 2, maximum_zoom);
 }
 
 std::filesystem::path cache_path(const std::filesystem::path& root, const TileKey& key) {
@@ -141,7 +142,7 @@ std::vector<std::uint8_t> download_tile(const TileKey& key) {
                               : L"a.tile.opentopomap.org";
     const std::wstring path = L"/" + std::to_wstring(key.zoom) + L"/" +
                               std::to_wstring(key.x) + L"/" + std::to_wstring(key.y) + L".png";
-    HINTERNET session = WinHttpOpen(L"OpenEFB/1.0.0-rc3 (+https://github.com/Gbaby4live/OpenEFB)",
+    HINTERNET session = WinHttpOpen(L"OpenEFB/1.0.0-rc6 (+https://github.com/Gbaby4live/OpenEFB)",
                                     WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) {
@@ -254,7 +255,7 @@ public:
     void draw(MapStyle style, const MapTileViewport& viewport) {
         XPLMSetGraphicsState(0, 1, 0, 0, 0, 0, 0);
         upload_ready();
-        const int zoom = tile_zoom(viewport);
+        const int zoom = tile_zoom(style, viewport);
         const int count = 1 << zoom;
         const double center_world_x = world_x(viewport.longitude_degrees, zoom);
         const double center_world_y = world_y(viewport.latitude_degrees, zoom);
@@ -364,7 +365,6 @@ private:
             stored.image = std::make_unique<XPlaneGpuImage>();
             const bool uploaded = stored.image->upload(
                 tile_size, tile_size, tile.pixels, GpuPixelFormat::bgra);
-            const std::string gpu_status = stored.image->status();
             constexpr int sample_step = tile_size / fallback_cells;
             for (int row = 0; row < fallback_cells; ++row) {
                 for (int column = 0; column < fallback_cells; ++column) {
@@ -379,14 +379,12 @@ private:
                 }
             }
             textures_.emplace(tile.key, std::move(stored));
-            ++tiles_uploaded_;
             source_.store(tile.source);
             {
                 std::lock_guard lock(mutex_);
-                status_text_ = (tile.source == MapTileSource::online ? "MAP ONLINE  "
-                                                                     : "MAP CACHE  ") +
-                               std::to_string(tiles_uploaded_) + " TILES  " +
-                               (uploaded ? "GPU MAP READY" : gpu_status);
+                status_text_ = uploaded
+                    ? (tile.source == MapTileSource::online ? "MAP ONLINE" : "MAP CACHED")
+                    : "MAP DISPLAY UNAVAILABLE";
             }
         }
     }
@@ -432,10 +430,10 @@ private:
                 std::lock_guard lock(mutex_);
                 pending_.erase(key);
                 if (!pixels.empty()) {
-                    status_text_ = "TILE READY FOR DISPLAY";
+                    status_text_ = "LOADING MAP";
                     ready_.push_back({key, std::move(pixels), source});
                 } else {
-                    status_text_ = encoded.empty() ? "TILE NETWORK FAILED" : "TILE PNG DECODE FAILED";
+                    status_text_ = encoded.empty() ? "MAP OFFLINE" : "MAP DATA UNAVAILABLE";
                     failed_until_[key] = std::chrono::steady_clock::now() + std::chrono::seconds(30);
                 }
             }
@@ -454,9 +452,8 @@ private:
     std::map<TileKey, std::chrono::steady_clock::time_point> failed_until_;
     std::map<TileKey, TileTexture> textures_;
     std::atomic<MapTileSource> source_{MapTileSource::vector_only};
-    std::string status_text_{"REQUESTING MAP TILES"};
+    std::string status_text_{"LOADING MAP"};
     bool stopping_{false};
-    std::size_t tiles_uploaded_{0};
     std::thread worker_;
 
 public:

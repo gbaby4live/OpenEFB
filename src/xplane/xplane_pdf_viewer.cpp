@@ -152,6 +152,7 @@ public:
         std::lock_guard lock(mutex_);
         path_ = std::move(path);
         requested_page_ = 0;
+        scroll_offset_ = 0.0;
         visible_ = true;
         status_ = "Loading PDF page...";
         request_pending_ = true;
@@ -179,27 +180,46 @@ public:
         const int next = std::clamp(current_page_ + delta, 0, page_count_ - 1);
         if (next == current_page_) return;
         requested_page_ = next;
+        scroll_offset_ = 0.0;
         status_ = "Loading PDF page...";
         request_pending_ = true;
         condition_.notify_one();
     }
 
+    void scroll(int wheel_clicks) {
+        if (!visible_ || wheel_clicks == 0 || maximum_scroll_ <= 0.0) return;
+        const double direction = wheel_clicks < 0 ? 1.0 : -1.0;
+        const double steps = static_cast<double>(std::abs(wheel_clicks));
+        const double amount = std::max(48.0, visible_source_height_ * 0.12);
+        scroll_offset_ = std::clamp(scroll_offset_ + direction * steps * amount,
+                                    0.0, maximum_scroll_);
+    }
+
     void draw(int left, int top, int right, int bottom) {
         upload_ready();
         if (width_ <= 0 || height_ <= 0) return;
-        const double available_width = std::max(1, right - left);
+        constexpr int scrollbar_space = 14;
+        const double available_width = std::max(1, right - left - scrollbar_space);
         const double available_height = std::max(1, top - bottom);
-        const double scale = std::min(available_width / width_, available_height / height_);
+        const double scale = available_width / width_;
         const double draw_width = width_ * scale;
-        const double draw_height = height_ * scale;
+        visible_source_height_ = std::min(
+            static_cast<double>(height_), available_height / std::max(0.0001, scale));
+        maximum_scroll_ = std::max(0.0, height_ - visible_source_height_);
+        scroll_offset_ = std::clamp(scroll_offset_, 0.0, maximum_scroll_);
+        const double draw_height = visible_source_height_ * scale;
         const double draw_left = left + (available_width - draw_width) * 0.5;
         const double draw_right = draw_left + draw_width;
-        const double draw_bottom = bottom + (available_height - draw_height) * 0.5;
-        const double draw_top = draw_bottom + draw_height;
+        const double draw_top = maximum_scroll_ > 0.0
+            ? static_cast<double>(top)
+            : bottom + (available_height + draw_height) * 0.5;
+        const double draw_bottom = draw_top - draw_height;
         const float maximum_u = static_cast<float>(width_) / texture_width_;
-        const float maximum_v = static_cast<float>(height_) / texture_height_;
+        const float top_v = static_cast<float>(scroll_offset_ / texture_height_);
+        const float bottom_v = static_cast<float>(
+            (scroll_offset_ + visible_source_height_) / texture_height_);
         const bool gpu_drawn = image_.draw(draw_left, draw_bottom, draw_right, draw_top,
-                                           0.0, maximum_v, maximum_u, 0.0);
+                                           0.0, bottom_v, maximum_u, top_v);
 
         // Compatibility raster: draw a bounded, downsampled page above the
         // texture so documents remain readable when a graphics bridge accepts
@@ -227,6 +247,32 @@ public:
             glEnd();
         }
         XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0);
+        if (maximum_scroll_ > 0.0) {
+            const double track_left = right - 7.0;
+            const double track_right = right - 3.0;
+            glColor4f(0.16F, 0.20F, 0.24F, 1.0F);
+            glBegin(GL_QUADS);
+            glVertex2d(track_left, bottom);
+            glVertex2d(track_right, bottom);
+            glVertex2d(track_right, top);
+            glVertex2d(track_left, top);
+            glEnd();
+
+            const double track_height = top - bottom;
+            const double thumb_height = std::max(
+                28.0, track_height * visible_source_height_ / height_);
+            const double travel = std::max(0.0, track_height - thumb_height);
+            const double fraction = scroll_offset_ / maximum_scroll_;
+            const double thumb_top = top - fraction * travel;
+            const double thumb_bottom = thumb_top - thumb_height;
+            glColor4f(0.30F, 0.72F, 0.86F, 1.0F);
+            glBegin(GL_QUADS);
+            glVertex2d(track_left, thumb_bottom);
+            glVertex2d(track_right, thumb_bottom);
+            glVertex2d(track_right, thumb_top);
+            glVertex2d(track_left, thumb_top);
+            glEnd();
+        }
     }
 
 private:
@@ -259,7 +305,7 @@ private:
         height_ = ready.height;
         {
             std::lock_guard lock(mutex_);
-            status_ = uploaded ? "PDF page ready  /  GPU PDF READY" : image_.status();
+            status_ = uploaded ? "PDF page ready" : "PDF page could not be displayed";
         }
         fallback_width_ = std::min(160, ready.width);
         fallback_height_ = std::clamp(
@@ -325,6 +371,9 @@ private:
     int requested_page_{};
     int current_page_{};
     int page_count_{};
+    double scroll_offset_{};
+    double maximum_scroll_{};
+    double visible_source_height_{};
     std::string status_;
     bool visible_{false};
     bool request_pending_{false};
@@ -337,6 +386,7 @@ void XPlanePdfViewer::open(std::filesystem::path path) { implementation_->open(s
 void XPlanePdfViewer::close() { implementation_->close(); }
 void XPlanePdfViewer::previous_page() { implementation_->move(-1); }
 void XPlanePdfViewer::next_page() { implementation_->move(1); }
+void XPlanePdfViewer::scroll(int wheel_clicks) { implementation_->scroll(wheel_clicks); }
 void XPlanePdfViewer::draw(int left, int top, int right, int bottom) {
     implementation_->draw(left, top, right, bottom);
 }

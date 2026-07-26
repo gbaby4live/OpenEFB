@@ -17,6 +17,7 @@ public:
     void close();
     void previous_page();
     void next_page();
+    void scroll(int wheel_clicks);
     void draw(int left, int top, int right, int bottom);
 
     [[nodiscard]] bool visible() const noexcept;

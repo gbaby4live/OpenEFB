@@ -72,20 +72,30 @@ the textured drawing state before upload. Briefing now has only Departure and
 Destination airport views. PDF charts render inside OpenEFB with Previous, Next,
 and Close controls using the Windows PDF renderer included with the operating system.
 
-Version 1.0.0 RC3 is the integrated acceptance build. It replaces inherited
-fixed-function texture sampling with an explicit shared GPU image shader for
-real map tiles and PDF pages. It hardens X-Plane raster
-display for map tiles and in-app PDF pages, adds repeatable release packaging,
-and adds explicit compatibility for X-Plane's Vulkan/Zink OpenGL bridge. It is
+Version 1.0.0 RC6 is the interactive map and chart-reliability build. It presents the shared
+CPU-rendered BGRA map and PDF surfaces through X-Plane-managed texture binding
+and drawing, matching the simulator's supported Vulkan/Zink bridge contract
+without installing a competing plugin shader. It hardens X-Plane raster display
+for map tiles and in-app PDF pages, adds repeatable release packaging, and is
 gated by the complete simulator checklist in `docs/acceptance-test.md`.
 It also adds X-Plane `.fms` route import and departure-destination named
 exports plus persistent
 high-contrast and comfort-size display preferences. It also generates each airport
 briefing as an in-app PDF, reports FAA chart
 download status inside the CHART list, and enables current Windows TLS for FAA
-downloads. Map and PDF page pixels are forced opaque and use a bounded
-geometry-based compatibility raster above the normal texture on graphics bridges
-that fail to composite uploaded plugin textures.
+downloads. Map and PDF page pixels are forced opaque, while a bounded
+geometry-based compatibility raster remains available if a texture cannot be created.
+RC5 removed renderer diagnostics from the flight-facing interface, moved the
+plain-language map connection state beside Live Data, enforced a layout-safe
+minimum window size, and added width-fitted PDF pages with mouse-wheel scrolling
+and a visible position indicator.
+RC6 adds independent Food, Golf, and Sights layers from OpenStreetMap data,
+opaque hover and confirmation cards, drag panning, pointer-centered wheel zoom,
+an aircraft recenter control, and Street-map zoom down to airport-surface scale.
+Confirmed places are inserted after the active FMS leg instead of replacing the
+route. It also corrects the current FAA d-TPP catalog filename, accepts larger
+official chart PDFs, replaces generated status text with PDFs, and presents
+TXT/Markdown library files as converted in-app PDF entries.
 
 Fuel flow is displayed in US gallons per hour using the standard avgas density
 of 6.0 lb per US gallon. Remaining fuel mass stays visible in kilograms and
@@ -95,10 +105,14 @@ Home now contains a large bordered live-map panel without taking over the full
 page. On Windows, it loads OpenStreetMap Street tiles by default and offers a
 one-click OpenTopoMap Topo view. It overlays range rings, aircraft heading, the
 programmed route, the active leg, key waypoint labels, destination distance and
-ETE, and supports mouse-wheel zoom from 5 to 320 nautical miles. Visible tiles
+ETE, and supports mouse-wheel zoom from 0.02 to 320 nautical miles. Visible tiles
 are loaded in the background, cached locally, and credited inside the map;
 aircraft and fuel summaries remain visible below the panel. A source label shows
 whether the visible basemap came from the network, cache, or vector fallback.
+The map can be dragged away from the aircraft, zoomed around the pointer, and
+returned to live position with HOME. Food, Golf, and Sights are separate layers;
+hovering a marker identifies it and clicking it offers an opaque confirmation
+before inserting the coordinate into the active X-Plane FMS route.
 Internet access is required for tiles not already cached. The native tile adapter
 for macOS and Linux is planned; those builds retain the vector map fallback.
 
@@ -116,13 +130,12 @@ runway identifiers, calculated runway dimensions, surfaces, communication
 frequencies, and the installed SID, STAR, and approach names. Searches run in
 the background so scanning large scenery files does not pause the simulator.
 
-Home now has independent WX, APT, NAV, and AIR switches. The installed X-Plane
+Home now has independent WX, APT, NAV, AIR, FOOD, GOLF, and SIGHTS switches. The installed X-Plane
 navigation database supplies nearby airport, VOR, NDB, and fix symbols in addition
-to the active route. Airport symbols are selectable; OpenEFB asks for confirmation
-before replacing the current FMS route with a direct route to that airport. Any
-visible Street/Topo attraction or map location can also be
-selected for a confirmed coordinate direct-to without requiring a proprietary
-points-of-interest database. WX highlights route endpoints that have current
+to the active route. Airport and OpenStreetMap place symbols are selectable;
+OpenEFB asks for confirmation before inserting the coordinate after the active
+FMS leg and selecting it for navigation without deleting the remaining route.
+WX highlights route endpoints that have current
 METAR reports, and AIR draws installed X-Plane OpenAIR boundaries including
 polygons, circles, and directional arcs. Custom Data airspace takes priority
 over X-Plane's default file. Parsing happens in the background and on-screen

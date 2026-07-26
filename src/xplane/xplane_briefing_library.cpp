@@ -24,7 +24,7 @@ namespace {
 
 constexpr float sample_interval_seconds = 2.0F;
 constexpr std::size_t maximum_catalog_size = 48 * 1024 * 1024;
-constexpr std::size_t maximum_chart_size = 8 * 1024 * 1024;
+constexpr std::size_t maximum_chart_size = 24 * 1024 * 1024;
 
 std::string lowercase(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
@@ -34,7 +34,7 @@ std::string lowercase(std::string value) {
 }
 
 bool supported_extension(const std::string& extension) {
-    static const std::set<std::string> extensions{".pdf", ".png", ".jpg", ".jpeg", ".txt", ".md"};
+    static const std::set<std::string> extensions{".pdf", ".txt", ".md"};
     return extensions.contains(extension);
 }
 
@@ -177,7 +177,7 @@ std::string current_faa_cycle() {
 
 #if IBM
 std::vector<std::uint8_t> download_faa_file(const std::wstring& path, std::size_t maximum_size) {
-    HINTERNET session = WinHttpOpen(L"OpenEFB/1.0.0-rc3 (+https://github.com/Gbaby4live/OpenEFB)",
+    HINTERNET session = WinHttpOpen(L"OpenEFB/1.0.0-rc6 (+https://github.com/Gbaby4live/OpenEFB)",
                                     WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) return {};
@@ -368,7 +368,7 @@ void XPlaneBriefingLibrary::archive(const ArchiveRequest& request) {
     catalog = read_text(catalog_path, maximum_catalog_size);
     if (catalog.empty() && !stopping_) {
         const std::wstring remote = L"/d-tpp/" + std::wstring(cycle.begin(), cycle.end()) +
-                                    L"/xml_data/d-TPP_Metafile.xml";
+                                    L"/xml_data/d-tpp_Metafile.xml";
         const auto downloaded = download_faa_file(remote, maximum_catalog_size);
         if (!downloaded.empty()) {
             catalog.assign(reinterpret_cast<const char*>(downloaded.data()), downloaded.size());
@@ -413,17 +413,22 @@ void XPlaneBriefingLibrary::archive(const ArchiveRequest& request) {
             std::filesystem::remove(document_folder / "OpenEFB-Latest-Briefing.txt", ignored);
         }
 
-        const auto chart_status = chart_folder / "Chart Download Status.txt";
+        const auto chart_status = chart_folder / "Chart Download Status.pdf";
+        {
+            std::error_code ignored;
+            std::filesystem::remove(chart_folder / "Chart Download Status.txt", ignored);
+        }
         if (catalog.empty()) {
-            write_text(chart_status,
-                       "FAA chart catalog was not available. Check internet access, then select Refresh.");
+            write_binary(chart_status, briefing_pdf(
+                "OpenEFB Chart Download Status\n\nFAA chart catalog was not available. "
+                "Check internet access, then select Refresh."));
             continue;
         }
         const auto charts = parse_faa_chart_catalog(catalog, airport);
         if (charts.empty()) {
-            write_text(chart_status,
-                       "No FAA chart records were found for " + airport +
-                           ". Automatic chart downloads currently cover U.S. FAA airports.");
+            write_binary(chart_status, briefing_pdf(
+                "OpenEFB Chart Download Status\n\nNo FAA chart records were found for " + airport +
+                ". Automatic chart downloads currently cover U.S. FAA airports."));
             continue;
         }
         const auto marker_path = chart_folder / ".faa-cycle";
@@ -447,8 +452,10 @@ void XPlaneBriefingLibrary::archive(const ArchiveRequest& request) {
             std::error_code ignored;
             std::filesystem::remove(chart_status, ignored);
         } else {
-            write_text(chart_status, "Downloaded " + std::to_string(downloaded_count) + " of " +
-                       std::to_string(charts.size()) + " FAA charts. Select Refresh to retry.");
+            write_binary(chart_status, briefing_pdf(
+                "OpenEFB Chart Download Status\n\nDownloaded " +
+                std::to_string(downloaded_count) + " of " +
+                std::to_string(charts.size()) + " FAA charts. Select Refresh to retry."));
         }
     }
 }
@@ -466,10 +473,28 @@ std::vector<LibraryEntry> XPlaneBriefingLibrary::scan_library() const {
                 if (entries.size() >= 500 || !item.is_regular_file()) continue;
                 const auto extension = lowercase(item.path().extension().string());
                 if (!supported_extension(extension)) continue;
+                if (item.path().filename().string().find(".openefb.pdf") != std::string::npos) {
+                    continue;
+                }
                 const auto relative = std::filesystem::relative(item.path(), folder).string();
-                entries.push_back({category, relative, item.path().string(),
-                                   (extension == ".txt" || extension == ".md")
-                                       ? read_text(item.path()) : std::string{}});
+                if (extension == ".txt" || extension == ".md") {
+                    const auto text = read_text(item.path());
+                    if (text.empty()) continue;
+                    auto converted = item.path();
+                    converted.replace_extension(".openefb.pdf");
+                    bool needs_conversion = !std::filesystem::is_regular_file(converted);
+                    if (!needs_conversion) {
+                        std::error_code timestamp_error;
+                        needs_conversion = std::filesystem::last_write_time(converted, timestamp_error) <
+                                           std::filesystem::last_write_time(item.path(), timestamp_error);
+                    }
+                    if (needs_conversion && !write_binary(converted, briefing_pdf(text))) continue;
+                    auto display_name = std::filesystem::path(relative);
+                    display_name.replace_extension(".pdf");
+                    entries.push_back({category, display_name.string(), converted.string(), {}});
+                    continue;
+                }
+                entries.push_back({category, relative, item.path().string(), {}});
             }
         }
         std::sort(entries.begin(), entries.end(), [](const auto& left, const auto& right) {

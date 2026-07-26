@@ -31,6 +31,8 @@ public:
     [[nodiscard]] std::optional<FlightPlanLeg> find_waypoint(
         std::string identifier, double near_latitude, double near_longitude) const;
     [[nodiscard]] FlightPlanEditResult apply_route(const std::vector<FlightPlanLeg>& legs);
+    [[nodiscard]] FlightPlanEditResult insert_after_active(FlightPlanLeg leg,
+                                                            std::string display_name);
     [[nodiscard]] FlightPlanEditResult import_latest(const std::filesystem::path& directory);
     [[nodiscard]] FlightPlanEditResult export_current(const std::filesystem::path& directory) const;
 

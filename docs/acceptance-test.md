@@ -6,6 +6,10 @@ any required item is failing.
 ## Installation and lifecycle
 
 - Install the packaged `OpenEFB` folder under `Resources/plugins`.
+- Confirm the window cannot be resized below the overlap-safe minimum and that
+  header labels, map controls, cards, and footer remain separated.
+- Open a PDF, place the pointer over the white page, and confirm the mouse wheel
+  scrolls the document while the title, toolbar, and scrollbar remain fixed.
 - Confirm X-Plane loads the plugin without an error in `Log.txt`.
 - Open, close, resize, disable, and re-enable OpenEFB.
 - Restart X-Plane and confirm the saved window and display settings return.
@@ -15,8 +19,11 @@ any required item is failing.
 - Confirm live aircraft position, motion, fuel, route, and UTC data.
 - Confirm Street and Topo basemaps are visibly different from the EFB background.
 - Confirm online tiles become cached and remain visible after disconnecting.
-- Exercise every overlay, zoom through the full range, and test airport direct-to confirmation.
-- Select an attraction symbol or arbitrary map point and confirm coordinate direct-to reaches the FMS.
+- Exercise every overlay and zoom from 320 NM down to 0.02 NM at an airport.
+- Drag the map, zoom around an off-center pointer, and confirm HOME returns to the aircraft.
+- Hover Food, Golf, and Sights icons and confirm the opaque card identifies each category.
+- Select a place or arbitrary map point, approve Add to FMS, and confirm it is
+  inserted after the active leg without deleting the remaining route.
 
 ## Route workflow
 
@@ -36,6 +43,8 @@ any required item is failing.
 
 - Confirm both DEP and DEST remain visible after a Library refresh.
 - Open generated briefing PDFs and saved FAA charts on a white in-app page.
+- At a U.S. airport, Refresh and confirm official FAA chart PDFs replace any
+  chart-status PDF. Confirm TXT/Markdown sources appear as in-app PDF entries.
 - Exercise Previous, Next, and Close and verify all page content is readable.
 - Confirm notes persist and the checklist resets for a new plugin session.
 

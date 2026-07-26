@@ -73,6 +73,51 @@ bool MovingMapModel::apply_wheel(int clicks) noexcept {
     return changed;
 }
 
+void MovingMapModel::update_aircraft_position(double latitude_degrees,
+                                               double longitude_degrees) noexcept {
+    if (!valid_coordinates(latitude_degrees, longitude_degrees)) return;
+    aircraft_latitude_degrees_ = latitude_degrees;
+    aircraft_longitude_degrees_ = longitude_degrees;
+    if (following_aircraft_ || !center_available_) {
+        center_latitude_degrees_ = latitude_degrees;
+        center_longitude_degrees_ = longitude_degrees;
+        center_available_ = true;
+    }
+}
+
+void MovingMapModel::pan_to(double latitude_degrees, double longitude_degrees) noexcept {
+    if (!valid_coordinates(latitude_degrees, longitude_degrees)) return;
+    center_latitude_degrees_ = latitude_degrees;
+    center_longitude_degrees_ = longitude_degrees;
+    center_available_ = true;
+    following_aircraft_ = false;
+}
+
+void MovingMapModel::pan_by(double east_nm, double north_nm) noexcept {
+    if (!center_available_) return;
+    const auto coordinate = unproject(center_latitude_degrees_, center_longitude_degrees_,
+                                      east_nm, north_nm);
+    if (coordinate.valid) pan_to(coordinate.latitude_degrees, coordinate.longitude_degrees);
+}
+
+void MovingMapModel::recenter_on_aircraft() noexcept {
+    following_aircraft_ = true;
+    if (valid_coordinates(aircraft_latitude_degrees_, aircraft_longitude_degrees_)) {
+        center_latitude_degrees_ = aircraft_latitude_degrees_;
+        center_longitude_degrees_ = aircraft_longitude_degrees_;
+        center_available_ = true;
+    }
+}
+
+bool MovingMapModel::following_aircraft() const noexcept { return following_aircraft_; }
+bool MovingMapModel::center_available() const noexcept { return center_available_; }
+double MovingMapModel::center_latitude_degrees() const noexcept {
+    return center_latitude_degrees_;
+}
+double MovingMapModel::center_longitude_degrees() const noexcept {
+    return center_longitude_degrees_;
+}
+
 MapOffset MovingMapModel::project(double center_latitude_degrees,
                                   double center_longitude_degrees,
                                   double latitude_degrees,

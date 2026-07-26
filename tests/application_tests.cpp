@@ -8,6 +8,7 @@
 #include "openefb/core/flight_plan_file.hpp"
 #include "openefb/core/fuel_model.hpp"
 #include "openefb/core/moving_map_model.hpp"
+#include "openefb/core/map_poi.hpp"
 #include "openefb/core/navigation_database_model.hpp"
 #include "openefb/core/planning_model.hpp"
 #include "openefb/core/route_progress_model.hpp"
@@ -428,6 +429,15 @@ int main() {
                 faa_charts[1].pdf_name == "00582I16L.PDF",
             "FAA d-TPP catalog parser selects and decodes one airport's charts");
 
+    const auto places = openefb::parse_overpass_pois(
+        "101\t24.556\t-81.782\tHarbor Cafe\tcafe\t\t\t\t\n"
+        "102\t24.560\t-81.790\tIsland Golf Club\t\t\t\tyes\t\n"
+        "103\t24.551\t-81.800\tHistoric Fort\t\tattraction\t\t\tfort\n");
+    require(places.size() == 3 && places[0].category == openefb::PoiCategory::food &&
+                places[1].category == openefb::PoiCategory::golf &&
+                places[2].category == openefb::PoiCategory::attraction,
+            "Overpass place data becomes independent food, golf, and attraction layers");
+
     openefb::MovingMapModel moving_map;
     require(moving_map.style() == openefb::MapStyle::street,
             "moving map defaults to OpenStreetMap street tiles");
@@ -447,6 +457,20 @@ int main() {
             "moving map can zoom in");
     require(moving_map.apply_wheel(-2) && moving_map.range_nm() == 80.0,
             "mouse wheel can zoom the moving map out");
+    moving_map.update_aircraft_position(47.449, -122.309);
+    require(moving_map.following_aircraft() && moving_map.center_available(),
+            "moving map initially follows the live aircraft");
+    moving_map.pan_by(2.0, 1.0);
+    require(!moving_map.following_aircraft() &&
+                moving_map.center_longitude_degrees() > -122.309,
+            "dragging creates an independent map center");
+    moving_map.recenter_on_aircraft();
+    require(moving_map.following_aircraft() &&
+                std::abs(moving_map.center_latitude_degrees() - 47.449) < 0.001,
+            "map recenter returns to the live aircraft");
+    while (moving_map.zoom_in()) {}
+    require(moving_map.range_nm() == 0.02,
+            "airport surface zoom reaches approximately a 120-foot map radius");
     const auto same_position = moving_map.project(47.449, -122.309, 47.449, -122.309);
     require(same_position.valid && std::abs(same_position.east_nm) < 0.001 &&
                 std::abs(same_position.north_nm) < 0.001,

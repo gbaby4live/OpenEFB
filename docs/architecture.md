@@ -103,12 +103,13 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
   latitude/longitude projection expressed in nautical miles, plus the selected
   Street or Topo presentation.
 - Home uses a large, bordered north-up map panel while retaining summary cards
-  below it. The map stays centered on live aircraft position and uses a
-  heading-oriented aircraft symbol.
+  below it. `MovingMapModel` maintains either a live-aircraft center or an
+  independent dragged center and uses a heading-oriented aircraft symbol.
 - The renderer clips route segments to the map viewport and distinguishes the
   active leg, route waypoints, endpoints, and destination progress.
-- Mouse-wheel zoom changes range without simulator data writes. Map projection
-  math remains in the core and is covered by unit tests.
+- Mouse-wheel zoom ranges from 320 NM to 0.02 NM and preserves the coordinate
+  beneath the pointer. Dragging pans without simulator writes and HOME restores
+  live-aircraft tracking. Projection math remains in the core and is unit tested.
 - `XPlaneMapTiles` requests only the raster tiles visible in the current panel.
   Network access and PNG decoding happen on a worker thread; OpenGL texture
   creation remains on X-Plane's drawing thread.
@@ -120,6 +121,13 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
   and image-decoding implementations are added.
 - A visible source indicator distinguishes online tiles, cached tiles, and the
   vector-only fallback instead of presenting an empty panel as a complete map.
+- `XPlaneMapPois` requests a bounded active-view query from Overpass only inside
+  a 40 NM range. The core parser classifies named OpenStreetMap results into
+  independent Food, Golf, and Sights layers. Results are de-cluttered before
+  drawing and remain available during a temporary service failure.
+- Hover cards and FMS confirmation dialogs are fully opaque. Confirming a place
+  inserts its coordinate after the current active leg, selects the new entry for
+  navigation, and preserves the remaining FMS route.
 - Decoded tiles also retain a bounded 64-by-64 opaque color grid. It is drawn
   beneath the normal texture so the basemap remains visible on an X-Plane graphics
   bridge that accepts plugin geometry but does not composite the uploaded texture.
@@ -175,8 +183,9 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
 - `XPlaneNavigationDatabase` incrementally scans installed airports, VORs, NDBs,
   and fixes on X-Plane's main thread and publishes immutable snapshots without a
   long single-frame pause. Nearby symbols therefore remain available offline.
-- Selectable airport symbols create a pending direct-to action. A modal warning
-  requires explicit confirmation before `XPlaneFlightPlan` replaces the FMS route.
+- Selectable airport and place symbols create a pending insertion action. An
+  opaque modal requires explicit confirmation before `XPlaneFlightPlan` inserts
+  the coordinate after the active leg and selects it without deleting the route.
 
 ## M12: aircraft planning
 
@@ -202,7 +211,8 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
 - `XPlaneBriefingLibrary` scans only the two dedicated user-library folders,
   accepts a bounded set of safe document extensions, caps entry count and text
   size, and performs no filesystem work from draw callbacks.
-- TXT and Markdown previews stay inside the EFB. On Windows, `XPlanePdfViewer`
+- TXT and Markdown source files are exposed as generated PDF entries so every
+  visible library item opens through the same in-app workflow. On Windows, `XPlanePdfViewer`
   renders PDF pages on a worker through `Windows.Data.Pdf`, decodes the resulting
   page image with WIC, and creates its OpenGL texture only on X-Plane's draw thread.
   Previous, Next, and Close remain explicit pilot actions.
@@ -227,19 +237,27 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
   cycle markers suppress redundant network traffic.
 - Automatic chart caching is limited to official FAA coverage. Subscription
   services whose terms prohibit offline caching are not scraped or archived.
-- A chart-status text entry remains visible when the FAA catalog, airport record,
-  or individual downloads are unavailable, so an empty chart folder is explained.
+- A chart-status PDF remains visible when the FAA catalog, airport record, or
+  individual downloads are unavailable, so an empty chart folder is explained
+  without relying on an external text viewer.
 
 ## 1.0 raster presentation
 
-- `XPlaneGpuImage` owns the shared map/PDF texture path. On Windows it compiles
-  a GLSL 1.20 compatibility shader with an explicit texture sampler, which avoids
-  relying on inherited fixed-function texture state under X-Plane's Vulkan/Zink bridge.
+- `XPlaneGpuImage` owns the shared map/PDF texture path. It binds texture IDs
+  through XPLM, uploads complete CPU-rendered BGRA/RGBA surfaces, fully declares
+  the required XPLM graphics state immediately before drawing, and relies on
+  X-Plane's panel-coordinate transform rather than installing a plugin shader.
 - Tile networking, PNG decoding, and Windows PDF rasterization remain off the
   simulator thread. Texture allocation, upload, and drawing remain inside the
   XPLM window drawing callback.
 - Street and Topo tiles remain unmodified provider imagery. Route, aircraft,
-  airport, navaid, weather, airspace, and direct-to interaction are independent
+  airport, navaid, weather, airspace, and place interaction are independent
   aviation overlays drawn above the basemap.
-- A bounded software color grid is retained only when the explicit GPU shader
-  cannot be created; it no longer covers successfully rendered provider tiles.
+- A bounded software color grid is retained when a texture cannot be created;
+  it does not cover successfully presented provider tiles.
+- Raster diagnostics remain internal. The header exposes only the user-facing
+  `MAP ONLINE`, `MAP CACHED`, or `MAP LOADING` state beside simulator live data.
+- PDF pages fit the white document viewport by width. Vertical cropping is
+  expressed through texture coordinates so the page cannot cover the viewer
+  chrome, while mouse-wheel input advances a bounded source-page offset and a
+  scrollbar reports the current position.

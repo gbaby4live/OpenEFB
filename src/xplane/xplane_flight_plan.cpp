@@ -7,6 +7,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstddef>
 #include <optional>
 #include <filesystem>
 #include <fstream>
@@ -176,6 +177,23 @@ FlightPlanEditResult XPlaneFlightPlan::apply_route(const std::vector<FlightPlanL
     }
     sample();
     return {true, "Route applied to X-Plane FMS"};
+}
+
+FlightPlanEditResult XPlaneFlightPlan::insert_after_active(FlightPlanLeg leg,
+                                                           std::string display_name) {
+    auto route = model_.snapshot();
+    std::vector<FlightPlanLeg> legs = route.available ? route.legs : std::vector<FlightPlanLeg>{};
+    const int active = std::clamp(route.active_leg_index, -1,
+                                  static_cast<int>(legs.size()) - 1);
+    const std::size_t insertion = static_cast<std::size_t>(active + 1);
+    legs.insert(legs.begin() + static_cast<std::ptrdiff_t>(insertion), std::move(leg));
+    auto result = apply_route(legs);
+    if (!result.success) return result;
+    XPLMSetDisplayedFMSEntry(static_cast<int>(insertion));
+    XPLMSetDestinationFMSEntry(static_cast<int>(insertion));
+    sample();
+    result.message = "Added " + std::move(display_name) + " to the active X-Plane FMS route";
+    return result;
 }
 
 FlightPlanEditResult XPlaneFlightPlan::import_latest(const std::filesystem::path& directory) {
