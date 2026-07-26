@@ -1292,13 +1292,13 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         draw_text(left, top, "About OpenEFB", text_primary, xplmFont_Basic);
         draw_text(left, top - 28, "An open-source electronic flight bag for X-Plane 12.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Version", "1.0.0 RC2 - Zink renderer compatibility");
+                  "Version", "1.0.0 RC3 - explicit GPU map and PDF renderer");
         draw_card(left, top - 178, card_right, top - 274,
                   "Project", "Built in the open for the flight-sim community");
         break;
     }
 
-    draw_text(left, bottom + 22, "OPEN EFB  /  1.0 RC2", text_muted);
+    draw_text(left, bottom + 22, "OPEN EFB  /  1.0 RC3", text_muted);
 }
 
 } // namespace

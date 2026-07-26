@@ -48,6 +48,7 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
         src/xplane/xplane_briefing_library.cpp
         src/xplane/xplane_flight_plan.cpp
         src/xplane/xplane_fuel.cpp
+        src/xplane/xplane_gpu_image.cpp
         src/xplane/xplane_menu.cpp
         src/xplane/xplane_map_tiles.cpp
         src/xplane/xplane_navigation_database.cpp

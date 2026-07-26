@@ -229,3 +229,17 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
   services whose terms prohibit offline caching are not scraped or archived.
 - A chart-status text entry remains visible when the FAA catalog, airport record,
   or individual downloads are unavailable, so an empty chart folder is explained.
+
+## 1.0 raster presentation
+
+- `XPlaneGpuImage` owns the shared map/PDF texture path. On Windows it compiles
+  a GLSL 1.20 compatibility shader with an explicit texture sampler, which avoids
+  relying on inherited fixed-function texture state under X-Plane's Vulkan/Zink bridge.
+- Tile networking, PNG decoding, and Windows PDF rasterization remain off the
+  simulator thread. Texture allocation, upload, and drawing remain inside the
+  XPLM window drawing callback.
+- Street and Topo tiles remain unmodified provider imagery. Route, aircraft,
+  airport, navaid, weather, airspace, and direct-to interaction are independent
+  aviation overlays drawn above the basemap.
+- A bounded software color grid is retained only when the explicit GPU shader
+  cannot be created; it no longer covers successfully rendered provider tiles.

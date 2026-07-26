@@ -1,4 +1,5 @@
 #include "xplane_map_tiles.hpp"
+#include "xplane_gpu_image.hpp"
 
 #include <XPLMGraphics.h>
 
@@ -42,24 +43,6 @@ constexpr int tile_size = 256;
 constexpr int fallback_cells = 64;
 constexpr double pi = 3.14159265358979323846;
 
-void prepare_fixed_function() {
-#if IBM
-    using UseProgram = void(APIENTRY*)(GLuint);
-    using BindVertexArray = void(APIENTRY*)(GLuint);
-    using BindBuffer = void(APIENTRY*)(GLenum, GLuint);
-    static const auto use_program = reinterpret_cast<UseProgram>(wglGetProcAddress("glUseProgram"));
-    static const auto bind_vertex_array = reinterpret_cast<BindVertexArray>(
-        wglGetProcAddress("glBindVertexArray"));
-    static const auto bind_buffer = reinterpret_cast<BindBuffer>(wglGetProcAddress("glBindBuffer"));
-    if (use_program) use_program(0);
-    if (bind_vertex_array) bind_vertex_array(0);
-    if (bind_buffer) {
-        bind_buffer(0x8892, 0); // GL_ARRAY_BUFFER
-        bind_buffer(0x8893, 0); // GL_ELEMENT_ARRAY_BUFFER
-    }
-#endif
-}
-
 struct TileKey {
     MapStyle style{};
     int zoom{};
@@ -76,7 +59,7 @@ struct DecodedTile {
 };
 
 struct TileTexture {
-    GLuint id{};
+    std::unique_ptr<XPlaneGpuImage> image;
     std::array<std::uint8_t, fallback_cells * fallback_cells * 3> fallback{};
 };
 
@@ -158,7 +141,7 @@ std::vector<std::uint8_t> download_tile(const TileKey& key) {
                               : L"a.tile.opentopomap.org";
     const std::wstring path = L"/" + std::to_wstring(key.zoom) + L"/" +
                               std::to_wstring(key.x) + L"/" + std::to_wstring(key.y) + L".png";
-    HINTERNET session = WinHttpOpen(L"OpenEFB/1.0.0-rc2 (+https://github.com/Gbaby4live/OpenEFB)",
+    HINTERNET session = WinHttpOpen(L"OpenEFB/1.0.0-rc3 (+https://github.com/Gbaby4live/OpenEFB)",
                                     WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) {
@@ -266,15 +249,9 @@ public:
         if (worker_.joinable()) {
             worker_.join();
         }
-        for (const auto& [key, texture] : textures_) {
-            static_cast<void>(key);
-            GLuint id = texture.id;
-            glDeleteTextures(1, &id);
-        }
     }
 
     void draw(MapStyle style, const MapTileViewport& viewport) {
-        prepare_fixed_function();
         XPLMSetGraphicsState(0, 1, 0, 0, 0, 0, 0);
         upload_ready();
         const int zoom = tile_zoom(viewport);
@@ -313,19 +290,14 @@ public:
                 const double u_right = (draw_right - tile_left) / tile_size;
                 const double v_top = (tile_top - draw_top) / tile_size;
                 const double v_bottom = (tile_top - draw_bottom) / tile_size;
-                XPLMSetGraphicsState(0, 1, 0, 0, 0, 0, 0);
-                glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-                XPLMBindTexture2d(static_cast<int>(found->second.id), 0);
-                glBegin(GL_QUADS);
-                glTexCoord2d(u_left, v_bottom); glVertex2d(draw_left, draw_bottom);
-                glTexCoord2d(u_right, v_bottom); glVertex2d(draw_right, draw_bottom);
-                glTexCoord2d(u_right, v_top); glVertex2d(draw_right, draw_top);
-                glTexCoord2d(u_left, v_top); glVertex2d(draw_left, draw_top);
-                glEnd();
+                const bool gpu_drawn = found->second.image && found->second.image->draw(
+                    draw_left, draw_bottom, draw_right, draw_top,
+                    u_left, v_bottom, u_right, v_top);
 
                 // Draw the decoded color grid after the texture. This guarantees
                 // a visible software-raster basemap on graphics bridges that
                 // accept plugin geometry but fail to composite uploaded pixels.
+                if (!gpu_drawn) {
                 XPLMSetGraphicsState(0, 0, 0, 0, 0, 0, 0);
                 constexpr double cell_size = static_cast<double>(tile_size) / fallback_cells;
                 glBegin(GL_QUADS);
@@ -353,6 +325,7 @@ public:
                     }
                 }
                 glEnd();
+                }
             }
         }
         XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0);
@@ -361,8 +334,6 @@ public:
                 ++iterator;
                 continue;
             }
-            GLuint texture = iterator->second.id;
-            glDeleteTextures(1, &texture);
             iterator = textures_.erase(iterator);
         }
     }
@@ -389,25 +360,11 @@ private:
             ready.swap(ready_);
         }
         for (auto& tile : ready) {
-            int texture_number{};
-            XPLMGenerateTextureNumbers(&texture_number, 1);
-            const GLuint texture = static_cast<GLuint>(texture_number);
-            XPLMBindTexture2d(texture_number, 0);
-            glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-            // WIC and X-Plane's Windows OpenGL path both use BGRA byte order.
-            // Keeping the decoded buffer in that native layout mirrors the
-            // proven upload path used by established X-Plane tablet plugins.
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tile_size, tile_size, 0,
-                         GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tile_size, tile_size,
-                            GL_BGRA, GL_UNSIGNED_BYTE, tile.pixels.data());
-            const GLenum upload_error = glGetError();
             TileTexture stored;
-            stored.id = texture;
+            stored.image = std::make_unique<XPlaneGpuImage>();
+            const bool uploaded = stored.image->upload(
+                tile_size, tile_size, tile.pixels, GpuPixelFormat::bgra);
+            const std::string gpu_status = stored.image->status();
             constexpr int sample_step = tile_size / fallback_cells;
             for (int row = 0; row < fallback_cells; ++row) {
                 for (int column = 0; column < fallback_cells; ++column) {
@@ -429,8 +386,7 @@ private:
                 status_text_ = (tile.source == MapTileSource::online ? "MAP ONLINE  "
                                                                      : "MAP CACHE  ") +
                                std::to_string(tiles_uploaded_) + " TILES  " +
-                               (upload_error == GL_NO_ERROR ? "GL OK" :
-                                "GL ERROR " + std::to_string(upload_error));
+                               (uploaded ? "GPU MAP READY" : gpu_status);
             }
         }
     }

@@ -1,4 +1,5 @@
 #include "xplane_pdf_viewer.hpp"
+#include "xplane_gpu_image.hpp"
 
 #include <XPLMGraphics.h>
 
@@ -47,24 +48,6 @@ int texture_extent(int value) {
     int extent = 1;
     while (extent < value && extent < 4096) extent *= 2;
     return extent;
-}
-
-void prepare_fixed_function() {
-#if IBM
-    using UseProgram = void(APIENTRY*)(GLuint);
-    using BindVertexArray = void(APIENTRY*)(GLuint);
-    using BindBuffer = void(APIENTRY*)(GLenum, GLuint);
-    static const auto use_program = reinterpret_cast<UseProgram>(wglGetProcAddress("glUseProgram"));
-    static const auto bind_vertex_array = reinterpret_cast<BindVertexArray>(
-        wglGetProcAddress("glBindVertexArray"));
-    static const auto bind_buffer = reinterpret_cast<BindBuffer>(wglGetProcAddress("glBindBuffer"));
-    if (use_program) use_program(0);
-    if (bind_vertex_array) bind_vertex_array(0);
-    if (bind_buffer) {
-        bind_buffer(0x8892, 0);
-        bind_buffer(0x8893, 0);
-    }
-#endif
 }
 
 #if IBM
@@ -163,7 +146,6 @@ public:
         }
         condition_.notify_one();
         if (worker_.joinable()) worker_.join();
-        if (texture_) glDeleteTextures(1, &texture_);
     }
 
     void open(std::filesystem::path path) {
@@ -204,7 +186,7 @@ public:
 
     void draw(int left, int top, int right, int bottom) {
         upload_ready();
-        if (!texture_ || width_ <= 0 || height_ <= 0) return;
+        if (width_ <= 0 || height_ <= 0) return;
         const double available_width = std::max(1, right - left);
         const double available_height = std::max(1, top - bottom);
         const double scale = std::min(available_width / width_, available_height / height_);
@@ -214,23 +196,15 @@ public:
         const double draw_right = draw_left + draw_width;
         const double draw_bottom = bottom + (available_height - draw_height) * 0.5;
         const double draw_top = draw_bottom + draw_height;
-        prepare_fixed_function();
-        XPLMSetGraphicsState(0, 1, 0, 0, 0, 0, 0);
-        XPLMBindTexture2d(static_cast<int>(texture_), 0);
-        glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-        glBegin(GL_QUADS);
         const float maximum_u = static_cast<float>(width_) / texture_width_;
         const float maximum_v = static_cast<float>(height_) / texture_height_;
-        glTexCoord2f(0.0F, maximum_v); glVertex2d(draw_left, draw_bottom);
-        glTexCoord2f(maximum_u, maximum_v); glVertex2d(draw_right, draw_bottom);
-        glTexCoord2f(maximum_u, 0.0F); glVertex2d(draw_right, draw_top);
-        glTexCoord2f(0.0F, 0.0F); glVertex2d(draw_left, draw_top);
-        glEnd();
+        const bool gpu_drawn = image_.draw(draw_left, draw_bottom, draw_right, draw_top,
+                                           0.0, maximum_v, maximum_u, 0.0);
 
         // Compatibility raster: draw a bounded, downsampled page above the
         // texture so documents remain readable when a graphics bridge accepts
         // OpenGL geometry but does not composite plugin textures.
-        if (!fallback_.empty() && fallback_width_ > 0 && fallback_height_ > 0) {
+        if (!gpu_drawn && !fallback_.empty() && fallback_width_ > 0 && fallback_height_ > 0) {
             XPLMSetGraphicsState(0, 0, 0, 0, 0, 0, 0);
             const double cell_width = draw_width / fallback_width_;
             const double cell_height = draw_height / fallback_height_;
@@ -268,13 +242,6 @@ private:
             page_count_ = ready.page_count;
         }
         if (ready.pixels.empty()) return;
-        prepare_fixed_function();
-        if (texture_) glDeleteTextures(1, &texture_);
-        int texture_number{};
-        XPLMGenerateTextureNumbers(&texture_number, 1);
-        texture_ = static_cast<GLuint>(texture_number);
-        XPLMSetGraphicsState(0, 1, 0, 0, 0, 0, 0);
-        XPLMBindTexture2d(texture_number, 0);
         texture_width_ = texture_extent(ready.width);
         texture_height_ = texture_extent(ready.height);
         std::vector<std::uint8_t> texture_pixels(
@@ -286,23 +253,13 @@ private:
                 static_cast<std::ptrdiff_t>(row) * texture_width_ * 4;
             std::copy_n(source, static_cast<std::size_t>(ready.width) * 4, destination);
         }
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture_width_, texture_height_, 0,
-                     GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, texture_width_, texture_height_,
-                        GL_BGRA, GL_UNSIGNED_BYTE, texture_pixels.data());
-        const GLenum upload_error = glGetError();
+        const bool uploaded = image_.upload(texture_width_, texture_height_, texture_pixels,
+                                            GpuPixelFormat::bgra);
         width_ = ready.width;
         height_ = ready.height;
         {
             std::lock_guard lock(mutex_);
-            status_ = upload_error == GL_NO_ERROR ? "PDF page ready  /  GL OK"
-                                                   : "PDF upload GL error " +
-                                                         std::to_string(upload_error);
+            status_ = uploaded ? "PDF page ready  /  GPU PDF READY" : image_.status();
         }
         fallback_width_ = std::min(160, ready.width);
         fallback_height_ = std::clamp(
@@ -357,7 +314,7 @@ private:
     std::thread worker_;
     std::filesystem::path path_;
     std::optional<RenderedPage> ready_;
-    GLuint texture_{};
+    XPlaneGpuImage image_;
     int width_{};
     int height_{};
     int texture_width_{};

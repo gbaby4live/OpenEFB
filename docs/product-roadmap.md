@@ -36,6 +36,8 @@ original open-source code and visuals.
   tile upload diagnostics across X-Plane graphics backends
 - RC1: compatibility raster fallback, repeatable packaging, cross-platform core
   CI, and one complete simulator acceptance test before final release
+- RC3: explicit shared GPU image shader for real map tiles and in-app PDF pages
+  under X-Plane's Vulkan/Zink OpenGL bridge
 
 ## Planned operational workflow
 
