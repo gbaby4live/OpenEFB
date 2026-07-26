@@ -42,6 +42,24 @@ constexpr int tile_size = 256;
 constexpr int fallback_cells = 64;
 constexpr double pi = 3.14159265358979323846;
 
+void prepare_fixed_function() {
+#if IBM
+    using UseProgram = void(APIENTRY*)(GLuint);
+    using BindVertexArray = void(APIENTRY*)(GLuint);
+    using BindBuffer = void(APIENTRY*)(GLenum, GLuint);
+    static const auto use_program = reinterpret_cast<UseProgram>(wglGetProcAddress("glUseProgram"));
+    static const auto bind_vertex_array = reinterpret_cast<BindVertexArray>(
+        wglGetProcAddress("glBindVertexArray"));
+    static const auto bind_buffer = reinterpret_cast<BindBuffer>(wglGetProcAddress("glBindBuffer"));
+    if (use_program) use_program(0);
+    if (bind_vertex_array) bind_vertex_array(0);
+    if (bind_buffer) {
+        bind_buffer(0x8892, 0); // GL_ARRAY_BUFFER
+        bind_buffer(0x8893, 0); // GL_ELEMENT_ARRAY_BUFFER
+    }
+#endif
+}
+
 struct TileKey {
     MapStyle style{};
     int zoom{};
@@ -140,7 +158,7 @@ std::vector<std::uint8_t> download_tile(const TileKey& key) {
                               : L"a.tile.opentopomap.org";
     const std::wstring path = L"/" + std::to_wstring(key.zoom) + L"/" +
                               std::to_wstring(key.x) + L"/" + std::to_wstring(key.y) + L".png";
-    HINTERNET session = WinHttpOpen(L"OpenEFB/1.0.0-rc1 (+https://github.com/Gbaby4live/OpenEFB)",
+    HINTERNET session = WinHttpOpen(L"OpenEFB/1.0.0-rc2 (+https://github.com/Gbaby4live/OpenEFB)",
                                     WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) {
@@ -256,7 +274,8 @@ public:
     }
 
     void draw(MapStyle style, const MapTileViewport& viewport) {
-        XPLMSetGraphicsState(0, 1, 0, 0, 1, 0, 0);
+        prepare_fixed_function();
+        XPLMSetGraphicsState(0, 1, 0, 0, 0, 0, 0);
         upload_ready();
         const int zoom = tile_zoom(viewport);
         const int count = 1 << zoom;
@@ -294,7 +313,7 @@ public:
                 const double u_right = (draw_right - tile_left) / tile_size;
                 const double v_top = (tile_top - draw_top) / tile_size;
                 const double v_bottom = (tile_top - draw_bottom) / tile_size;
-                XPLMSetGraphicsState(0, 1, 0, 0, 1, 0, 0);
+                XPLMSetGraphicsState(0, 1, 0, 0, 0, 0, 0);
                 glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
                 XPLMBindTexture2d(static_cast<int>(found->second.id), 0);
                 glBegin(GL_QUADS);
@@ -383,7 +402,10 @@ private:
             // Keeping the decoded buffer in that native layout mirrors the
             // proven upload path used by established X-Plane tablet plugins.
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tile_size, tile_size, 0,
-                         GL_BGRA, GL_UNSIGNED_BYTE, tile.pixels.data());
+                         GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tile_size, tile_size,
+                            GL_BGRA, GL_UNSIGNED_BYTE, tile.pixels.data());
+            const GLenum upload_error = glGetError();
             TileTexture stored;
             stored.id = texture;
             constexpr int sample_step = tile_size / fallback_cells;
@@ -406,7 +428,9 @@ private:
                 std::lock_guard lock(mutex_);
                 status_text_ = (tile.source == MapTileSource::online ? "MAP ONLINE  "
                                                                      : "MAP CACHE  ") +
-                               std::to_string(tiles_uploaded_) + " TILES";
+                               std::to_string(tiles_uploaded_) + " TILES  " +
+                               (upload_error == GL_NO_ERROR ? "GL OK" :
+                                "GL ERROR " + std::to_string(upload_error));
             }
         }
     }

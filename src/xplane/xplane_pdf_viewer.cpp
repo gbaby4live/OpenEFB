@@ -49,6 +49,24 @@ int texture_extent(int value) {
     return extent;
 }
 
+void prepare_fixed_function() {
+#if IBM
+    using UseProgram = void(APIENTRY*)(GLuint);
+    using BindVertexArray = void(APIENTRY*)(GLuint);
+    using BindBuffer = void(APIENTRY*)(GLenum, GLuint);
+    static const auto use_program = reinterpret_cast<UseProgram>(wglGetProcAddress("glUseProgram"));
+    static const auto bind_vertex_array = reinterpret_cast<BindVertexArray>(
+        wglGetProcAddress("glBindVertexArray"));
+    static const auto bind_buffer = reinterpret_cast<BindBuffer>(wglGetProcAddress("glBindBuffer"));
+    if (use_program) use_program(0);
+    if (bind_vertex_array) bind_vertex_array(0);
+    if (bind_buffer) {
+        bind_buffer(0x8892, 0);
+        bind_buffer(0x8893, 0);
+    }
+#endif
+}
+
 #if IBM
 RenderedPage decode_png(const std::vector<std::uint8_t>& png, int page, int page_count) {
     IWICImagingFactory* factory{};
@@ -196,7 +214,8 @@ public:
         const double draw_right = draw_left + draw_width;
         const double draw_bottom = bottom + (available_height - draw_height) * 0.5;
         const double draw_top = draw_bottom + draw_height;
-        XPLMSetGraphicsState(0, 1, 0, 0, 1, 0, 0);
+        prepare_fixed_function();
+        XPLMSetGraphicsState(0, 1, 0, 0, 0, 0, 0);
         XPLMBindTexture2d(static_cast<int>(texture_), 0);
         glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
         glBegin(GL_QUADS);
@@ -249,11 +268,12 @@ private:
             page_count_ = ready.page_count;
         }
         if (ready.pixels.empty()) return;
+        prepare_fixed_function();
         if (texture_) glDeleteTextures(1, &texture_);
         int texture_number{};
         XPLMGenerateTextureNumbers(&texture_number, 1);
         texture_ = static_cast<GLuint>(texture_number);
-        XPLMSetGraphicsState(0, 1, 0, 0, 1, 0, 0);
+        XPLMSetGraphicsState(0, 1, 0, 0, 0, 0, 0);
         XPLMBindTexture2d(texture_number, 0);
         texture_width_ = texture_extent(ready.width);
         texture_height_ = texture_extent(ready.height);
@@ -272,9 +292,18 @@ private:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture_width_, texture_height_, 0,
-                     GL_BGRA, GL_UNSIGNED_BYTE, texture_pixels.data());
+                     GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, texture_width_, texture_height_,
+                        GL_BGRA, GL_UNSIGNED_BYTE, texture_pixels.data());
+        const GLenum upload_error = glGetError();
         width_ = ready.width;
         height_ = ready.height;
+        {
+            std::lock_guard lock(mutex_);
+            status_ = upload_error == GL_NO_ERROR ? "PDF page ready  /  GL OK"
+                                                   : "PDF upload GL error " +
+                                                         std::to_string(upload_error);
+        }
         fallback_width_ = std::min(160, ready.width);
         fallback_height_ = std::clamp(
             static_cast<int>(std::lround(static_cast<double>(fallback_width_) *

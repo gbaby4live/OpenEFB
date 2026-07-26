@@ -72,9 +72,10 @@ the textured drawing state before upload. Briefing now has only Departure and
 Destination airport views. PDF charts render inside OpenEFB with Previous, Next,
 and Close controls using the Windows PDF renderer included with the operating system.
 
-Version 1.0.0 RC1 is the integrated acceptance build. It hardens X-Plane raster
+Version 1.0.0 RC2 is the integrated acceptance build. It hardens X-Plane raster
 display for map tiles and in-app PDF pages, adds repeatable release packaging,
-and is gated by the complete simulator checklist in `docs/acceptance-test.md`.
+and adds explicit compatibility for X-Plane's Vulkan/Zink OpenGL bridge. It is
+gated by the complete simulator checklist in `docs/acceptance-test.md`.
 It also adds X-Plane `.fms` route import and departure-destination named
 exports plus persistent
 high-contrast and comfort-size display preferences. It also generates each airport
