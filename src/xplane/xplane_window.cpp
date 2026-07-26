@@ -52,6 +52,7 @@ constexpr Color connected{0.42F, 1.0F, 0.62F, 1.0F};
 constexpr Color map_background{0.025F, 0.075F, 0.095F, 1.0F};
 constexpr Color map_grid{0.16F, 0.31F, 0.35F, 1.0F};
 constexpr Color route_line{0.25F, 0.72F, 0.88F, 1.0F};
+bool high_contrast_mode = false;
 
 void draw_rectangle(int left, int top, int right, int bottom, Color color) {
     glColor4f(color.red, color.green, color.blue, color.alpha);
@@ -120,6 +121,11 @@ bool clip_line(double& x_1, double& y_1, double& x_2, double& y_2,
 }
 
 void draw_text(int x, int y, std::string_view value, Color color, XPLMFontID font = xplmFont_Proportional) {
+    if (high_contrast_mode) {
+        color.red = std::max(color.red, 0.88F);
+        color.green = std::max(color.green, 0.88F);
+        color.blue = std::max(color.blue, 0.88F);
+    }
     float rgb[]{color.red, color.green, color.blue};
     std::string mutable_value(value);
     XPLMDrawString(rgb, x, y, mutable_value.data(), nullptr, font);
@@ -260,6 +266,7 @@ void draw_flight_plan_editor(const FlightPlanEditor& editor,
 
 void draw_flight_plan_page(const FlightPlanSnapshot& flight_plan,
                            const FlightPlanEditor& editor,
+                           std::string_view route_file_message,
                            int left, int top, int right, int bottom) {
     const int card_right = std::max(left + 260, right - 28);
     if (editor.active()) {
@@ -267,16 +274,22 @@ void draw_flight_plan_page(const FlightPlanSnapshot& flight_plan,
         return;
     }
     draw_text(left, top, "Flight Plan", text_primary, xplmFont_Basic);
+    draw_button(card_right - 338, top + 8, card_right - 224, top - 23, "Import latest");
+    draw_button(card_right - 216, top + 8, card_right - 90, top - 23, "Export .fms");
     draw_button(card_right - 82, top + 8, card_right, top - 23, "Edit", true);
 
+    if (!route_file_message.empty()) {
+        draw_text(left, top - 28, route_file_message, accent);
+    }
+
     if (!flight_plan.available) {
-        draw_text(left, top - 28, "Waiting for X-Plane FMS data...", text_muted);
+        if (route_file_message.empty()) draw_text(left, top - 28, "Waiting for X-Plane FMS data...", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
                   "Route status", "Flight-plan service is starting");
         return;
     }
     if (flight_plan.legs.empty()) {
-        draw_text(left, top - 28, "No active route is loaded.", text_muted);
+        if (route_file_message.empty()) draw_text(left, top - 28, "No active route is loaded.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
                   "X-Plane FMS", "Select Edit to create a route from waypoint identifiers");
         return;
@@ -288,7 +301,7 @@ void draw_flight_plan_page(const FlightPlanSnapshot& flight_plan,
     std::snprintf(summary, sizeof(summary), "Departure %s  |  Destination %s  |  %zu legs  |  Active %d",
                   first.identifier.c_str(), last.identifier.c_str(), flight_plan.legs.size(),
                   flight_plan.active_leg_index >= 0 ? flight_plan.active_leg_index + 1 : 0);
-    draw_text(left, top - 28, summary, text_muted);
+    draw_text(left, top - (route_file_message.empty() ? 28 : 50), summary, text_muted);
 
     const int active = std::clamp(flight_plan.active_leg_index, 0,
                                   static_cast<int>(flight_plan.legs.size()) - 1);
@@ -296,7 +309,7 @@ void draw_flight_plan_page(const FlightPlanSnapshot& flight_plan,
     const std::size_t visible_count = std::min<std::size_t>(5, flight_plan.legs.size() - start);
     constexpr int row_height = 48;
     constexpr int row_gap = 6;
-    int row_top = top - 58;
+    int row_top = top - (route_file_message.empty() ? 58 : 78);
     for (std::size_t offset = 0; offset < visible_count; ++offset) {
         const auto& leg = flight_plan.legs[start + offset];
         draw_rectangle(left, row_top, card_right, row_top - row_height,
@@ -1215,6 +1228,7 @@ void draw_briefing_page(const BriefingModel& briefing, const TelemetrySnapshot& 
 void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                        const FlightPlanSnapshot& flight_plan,
                        const FlightPlanEditor& flight_plan_editor,
+                       std::string_view route_file_message,
                        std::string_view airport_query,
                        const AirportInfoSnapshot& airport_info,
                        const FuelSnapshot& fuel,
@@ -1227,6 +1241,7 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                        const MovingMapModel& moving_map,
                        XPlaneMapTiles& map_tiles,
                        std::vector<MapHitTarget>& map_hit_targets,
+                       const DisplayPreferences& display_preferences,
                        int left, int top, int right, int bottom) {
     const int card_right = std::max(left + 260, right - 28);
     switch (page) {
@@ -1236,7 +1251,8 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                       left, top, right, bottom);
         break;
     case EfbPage::flight_plan:
-        draw_flight_plan_page(flight_plan, flight_plan_editor, left, top, right, bottom);
+        draw_flight_plan_page(flight_plan, flight_plan_editor, route_file_message,
+                              left, top, right, bottom);
         break;
     case EfbPage::airports:
         draw_airports_page(airport_query, airport_info, left, top, right, bottom);
@@ -1256,23 +1272,31 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         break;
     case EfbPage::settings:
         draw_text(left, top, "Settings", text_primary, xplmFont_Basic);
-        draw_text(left, top - 28, "OpenEFB preferences and display behavior.", text_muted);
+        draw_text(left, top - 28, "Saved display and accessibility preferences.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
                   "Window geometry", "Position and size save automatically");
-        draw_card(left, top - 178, card_right, top - 274,
-                  "Appearance", "Dark cockpit theme");
+        draw_card(left, top - 178, card_right, top - 274, "High contrast text",
+                  display_preferences.high_contrast ? "Enabled - maximum text visibility" :
+                                                       "Disabled - standard cockpit palette");
+        draw_button(card_right - 122, top - 207, card_right - 18, top - 240,
+                    display_preferences.high_contrast ? "Turn off" : "Turn on", true);
+        draw_card(left, top - 294, card_right, top - 390, "Comfort-size window",
+                  display_preferences.comfort_size ? "Enabled - 1000 x 700 minimum" :
+                                                     "Disabled - compact minimum");
+        draw_button(card_right - 122, top - 323, card_right - 18, top - 356,
+                    display_preferences.comfort_size ? "Compact" : "Enlarge", true);
         break;
     case EfbPage::about:
         draw_text(left, top, "About OpenEFB", text_primary, xplmFont_Basic);
         draw_text(left, top - 28, "An open-source electronic flight bag for X-Plane 12.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Version", "0.13.5 - M13 native map and PDF pixel display");
+                  "Version", "0.14.1 - M14 named route files and accessibility");
         draw_card(left, top - 178, card_right, top - 274,
                   "Project", "Built in the open for the flight-sim community");
         break;
     }
 
-    draw_text(left, bottom + 22, "OPEN EFB  /  M13", text_muted);
+    draw_text(left, bottom + 22, "OPEN EFB  /  M14", text_muted);
 }
 
 } // namespace
@@ -1334,6 +1358,8 @@ XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
       route_progress_model_(route_progress_model),
       weather_model_(weather_model),
       preferences_(preferences), map_tiles_(preferences.map_cache_directory()) {
+    display_preferences_ = preferences_.load_display_preferences();
+    high_contrast_mode = display_preferences_.high_contrast;
     WindowGeometry geometry;
     if (const auto stored = preferences_.load_geometry()) {
         geometry = *stored;
@@ -1351,6 +1377,7 @@ XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
         geometry.bottom = geometry.top - initial_height;
     }
     geometry.enforce_minimum(minimum_width, minimum_height);
+    if (display_preferences_.comfort_size) geometry.enforce_minimum(1000, 700);
 
     XPLMCreateWindow_t parameters{};
     parameters.structSize = sizeof(parameters);
@@ -1437,12 +1464,14 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
     const int content_top = top - status_bar_height - 38;
     draw_page_content(ui_model_.active_page(), telemetry, flight_plan_model_.snapshot(),
                       flight_plan_editor_,
+                      route_file_message_,
                       airport_query_, airport_info_model_.snapshot(),
                       fuel_model_.snapshot(), planning_model_.snapshot(), briefing_model_,
                       route_progress_model_.snapshot(),
                       weather_model_.snapshot(), airspace_model_.snapshot(),
                       navigation_database_model_.snapshot(), moving_map_model_, map_tiles_,
                       map_hit_targets_,
+                      display_preferences_,
                       content_left, content_top, right, bottom);
     if (ui_model_.active_page() == EfbPage::home && !map_action_message_.empty()) {
         draw_text(content_left + 310, content_top, map_action_message_, connected);
@@ -1563,6 +1592,32 @@ void XPlaneWindow::apply_editor_route() {
         return;
     }
     flight_plan_editor_.mark_applied(flight_plan_model_.snapshot());
+}
+
+void XPlaneWindow::import_latest_route() {
+    const auto result = xplane_flight_plan_.import_latest(preferences_.flight_plan_directory());
+    route_file_message_ = result.message;
+}
+
+void XPlaneWindow::export_current_route() {
+    const auto result = xplane_flight_plan_.export_current(preferences_.flight_plan_directory());
+    route_file_message_ = result.message;
+}
+
+void XPlaneWindow::toggle_high_contrast() {
+    display_preferences_.high_contrast = !display_preferences_.high_contrast;
+    high_contrast_mode = display_preferences_.high_contrast;
+    preferences_.save_display_preferences(display_preferences_);
+}
+
+void XPlaneWindow::toggle_comfort_size() {
+    display_preferences_.comfort_size = !display_preferences_.comfort_size;
+    preferences_.save_display_preferences(display_preferences_);
+    if (!window_id_ || !display_preferences_.comfort_size) return;
+    int left{}, top{}, right{}, bottom{};
+    XPLMGetWindowGeometry(window_id_, &left, &top, &right, &bottom);
+    XPLMSetWindowGeometry(window_id_, left, top, std::max(right, left + 1000),
+                          std::min(bottom, top - 700));
 }
 
 void XPlaneWindow::handle_editor_key(char key, char virtual_key) {
@@ -1824,6 +1879,16 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
         const int content_top = top - status_bar_height - 38;
         const int card_right = std::max(content_left + 420, right - 28);
         if (!window->flight_plan_editor_.active()) {
+            if (y <= content_top + 8 && y >= content_top - 23) {
+                if (x >= card_right - 338 && x <= card_right - 224) {
+                    window->import_latest_route();
+                    return 1;
+                }
+                if (x >= card_right - 216 && x <= card_right - 90) {
+                    window->export_current_route();
+                    return 1;
+                }
+            }
             if (x >= card_right - 82 && x <= card_right &&
                 y <= content_top + 8 && y >= content_top - 23 &&
                 window->flight_plan_editor_.begin(window->flight_plan_model_.snapshot())) {
@@ -1885,6 +1950,21 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
                     return 1;
                 }
                 row_top -= row_height + row_gap;
+            }
+        }
+    }
+    if (window->ui_model_.active_page() == EfbPage::settings) {
+        const int content_left = left + sidebar_width + 30;
+        const int content_top = top - status_bar_height - 38;
+        const int card_right = std::max(content_left + 260, right - 28);
+        if (x >= card_right - 122 && x <= card_right - 18) {
+            if (y <= content_top - 207 && y >= content_top - 240) {
+                window->toggle_high_contrast();
+                return 1;
+            }
+            if (y <= content_top - 323 && y >= content_top - 356) {
+                window->toggle_comfort_size();
+                return 1;
             }
         }
     }

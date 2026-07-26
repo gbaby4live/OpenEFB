@@ -91,6 +91,10 @@ private:
     void save_geometry() const;
     void resolve_editor_waypoint(EditorPlacement placement);
     void apply_editor_route();
+    void import_latest_route();
+    void export_current_route();
+    void toggle_high_contrast();
+    void toggle_comfort_size();
     void handle_editor_key(char key, char virtual_key);
     void handle_airport_key(char key, char virtual_key);
     void handle_briefing_key(char key, char virtual_key);
@@ -128,6 +132,8 @@ private:
     std::string map_action_message_;
     XPLMWindowID window_id_{nullptr};
     std::string airport_query_;
+    DisplayPreferences display_preferences_;
+    std::string route_file_message_;
 };
 
 } // namespace openefb::xplane

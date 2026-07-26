@@ -14,6 +14,42 @@ XPlanePreferences::XPlanePreferences() {
     XPLMExtractFileAndPath(preferences_path.data());
     file_path_ = std::filesystem::path(preferences_path.data()) / "OpenEFB.prf";
     notes_path_ = file_path_.parent_path() / "OpenEFB" / "briefing-notes.txt";
+    display_path_ = file_path_.parent_path() / "OpenEFB" / "display.prf";
+    std::array<char, 512> system_path{};
+    XPLMGetSystemPath(system_path.data());
+    xplane_root_ = std::filesystem::path(system_path.data());
+}
+
+DisplayPreferences XPlanePreferences::load_display_preferences() const {
+    DisplayPreferences preferences;
+    try {
+        std::ifstream input(display_path_);
+        std::string signature;
+        int version{};
+        int high_contrast{};
+        int comfort_size{};
+        if (input >> signature >> version >> high_contrast >> comfort_size &&
+            signature == "OpenEFBDisplay" && version == 1) {
+            preferences.high_contrast = high_contrast != 0;
+            preferences.comfort_size = comfort_size != 0;
+        }
+    } catch (...) {
+    }
+    return preferences;
+}
+
+void XPlanePreferences::save_display_preferences(const DisplayPreferences& preferences) const {
+    try {
+        std::filesystem::create_directories(display_path_.parent_path());
+        std::ofstream output(display_path_, std::ios::trunc);
+        output << "OpenEFBDisplay 1\n" << (preferences.high_contrast ? 1 : 0) << ' '
+               << (preferences.comfort_size ? 1 : 0) << '\n';
+    } catch (...) {
+    }
+}
+
+std::filesystem::path XPlanePreferences::flight_plan_directory() const {
+    return xplane_root_ / "Output" / "FMS plans";
 }
 
 std::optional<WindowGeometry> XPlanePreferences::load_geometry() const {

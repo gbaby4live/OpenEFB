@@ -1,4 +1,5 @@
 #include "xplane_flight_plan.hpp"
+#include "openefb/core/flight_plan_file.hpp"
 
 #include <XPLMNavigation.h>
 
@@ -7,6 +8,8 @@
 #include <cctype>
 #include <cmath>
 #include <optional>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -173,6 +176,48 @@ FlightPlanEditResult XPlaneFlightPlan::apply_route(const std::vector<FlightPlanL
     }
     sample();
     return {true, "Route applied to X-Plane FMS"};
+}
+
+FlightPlanEditResult XPlaneFlightPlan::import_latest(const std::filesystem::path& directory) {
+    try {
+        std::filesystem::path newest;
+        std::filesystem::file_time_type newest_time{};
+        if (!std::filesystem::is_directory(directory)) {
+            return {false, "X-Plane FMS plans folder was not found"};
+        }
+        for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+            if (!entry.is_regular_file() || uppercase(entry.path().extension().string()) != ".FMS") continue;
+            const auto time = entry.last_write_time();
+            if (newest.empty() || time > newest_time) {
+                newest = entry.path();
+                newest_time = time;
+            }
+        }
+        if (newest.empty()) return {false, "No .fms plan was found in Output/FMS plans"};
+        std::ifstream input(newest);
+        auto parsed = parse_xplane_fms(input);
+        if (!parsed.success) return {false, parsed.message};
+        auto applied = apply_route(parsed.legs);
+        if (applied.success) applied.message = "Imported " + newest.filename().string() + " to X-Plane FMS";
+        return applied;
+    } catch (...) {
+        return {false, "The latest FMS plan could not be imported"};
+    }
+}
+
+FlightPlanEditResult XPlaneFlightPlan::export_current(const std::filesystem::path& directory) const {
+    try {
+        const auto& route = model_.snapshot();
+        if (!route.available || route.legs.empty()) return {false, "There is no route to export"};
+        std::filesystem::create_directories(directory);
+        const auto filename = xplane_fms_filename(route.legs);
+        const auto path = directory / filename;
+        std::ofstream output(path, std::ios::trunc);
+        if (!write_xplane_fms(output, route.legs)) return {false, "The route could not be exported"};
+        return {true, "Saved Output/FMS plans/" + filename};
+    } catch (...) {
+        return {false, "The route could not be exported"};
+    }
 }
 
 void XPlaneFlightPlan::sample() {

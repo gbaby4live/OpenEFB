@@ -72,7 +72,10 @@ the textured drawing state before upload. Briefing now has only Departure and
 Destination airport views. PDF charts render inside OpenEFB with Previous, Next,
 and Close controls using the Windows PDF renderer included with the operating system.
 
-Version 0.13.5 generates each airport briefing as an in-app PDF, reports FAA chart
+Version 0.14.1 adds X-Plane `.fms` route import and departure-destination named
+exports plus persistent
+high-contrast and comfort-size display preferences. It also generates each airport
+briefing as an in-app PDF, reports FAA chart
 download status inside the CHART list, and enables current Windows TLS for FAA
 downloads. Map and PDF page pixels are forced opaque and their basemap/page pass
 draws without alpha blending to avoid invisible textures in X-Plane's graphics bridge.

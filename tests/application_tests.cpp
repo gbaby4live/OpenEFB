@@ -5,6 +5,7 @@
 #include "openefb/core/flight_plan_model.hpp"
 #include "openefb/core/faa_chart_catalog.hpp"
 #include "openefb/core/flight_plan_editor.hpp"
+#include "openefb/core/flight_plan_file.hpp"
 #include "openefb/core/fuel_model.hpp"
 #include "openefb/core/moving_map_model.hpp"
 #include "openefb/core/navigation_database_model.hpp"
@@ -482,6 +483,32 @@ int main() {
     require(airspace_model.snapshot().zones->size() == 3 &&
                 airspace_model.snapshot().revision == 2,
             "airspace model publishes immutable parsed snapshots");
+
+    std::istringstream fms_input{
+        "I\n1100 Version\nCYCLE 2607\nADEP KSEA\nADES KPDX\nNUMENR 3\n"
+        "1 KSEA ADEP 433 47.449000 -122.309000\n"
+        "11 OLM DRCT 8000 46.971000 -122.902000\n"
+        "1 KPDX ADES 31 45.589000 -122.597000\n"};
+    const auto imported_plan = openefb::parse_xplane_fms(fms_input);
+    require(imported_plan.success && imported_plan.legs.size() == 3 &&
+                imported_plan.legs.front().kind == openefb::WaypointKind::airport &&
+                imported_plan.legs[1].kind == openefb::WaypointKind::fix &&
+                imported_plan.legs.back().identifier == "KPDX",
+            "X-Plane 11/12 FMS plans import with endpoint and waypoint data");
+    std::ostringstream fms_output;
+    require(openefb::write_xplane_fms(fms_output, imported_plan.legs) &&
+                fms_output.str().find("NUMENR 3") != std::string::npos &&
+                fms_output.str().find("ADEP KSEA") != std::string::npos,
+            "active routes export in X-Plane 1100 FMS format");
+    require(openefb::xplane_fms_filename(imported_plan.legs) == "KSEA-KPDX.fms",
+            "exported FMS filenames identify departure and destination");
+    auto unusual_filename_legs = imported_plan.legs;
+    unusual_filename_legs.front().identifier = "K/SEA";
+    require(openefb::xplane_fms_filename(unusual_filename_legs) == "KSEA-KPDX.fms",
+            "exported route names remove filesystem-unsafe characters");
+    std::istringstream invalid_fms{"I\n1100 Version\nNUMENR 2\n1 KSEA ADEP 0 1 2\n"};
+    require(!openefb::parse_xplane_fms(invalid_fms).success,
+            "incomplete FMS plans are rejected safely");
 
     std::cout << "OpenEFB core tests passed\n";
     return EXIT_SUCCESS;

@@ -9,6 +9,11 @@
 
 namespace openefb::xplane {
 
+struct DisplayPreferences {
+    bool high_contrast{false};
+    bool comfort_size{false};
+};
+
 class XPlanePreferences final {
 public:
     XPlanePreferences();
@@ -20,10 +25,15 @@ public:
     [[nodiscard]] std::filesystem::path briefing_library_directory() const;
     [[nodiscard]] std::string load_briefing_notes() const;
     void save_briefing_notes(std::string_view notes) const;
+    [[nodiscard]] DisplayPreferences load_display_preferences() const;
+    void save_display_preferences(const DisplayPreferences& preferences) const;
+    [[nodiscard]] std::filesystem::path flight_plan_directory() const;
 
 private:
     std::filesystem::path file_path_;
     std::filesystem::path notes_path_;
+    std::filesystem::path display_path_;
+    std::filesystem::path xplane_root_;
 };
 
 } // namespace openefb::xplane

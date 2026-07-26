@@ -32,6 +32,11 @@ original open-source code and visuals.
 
 - M14: route import/export, settings, accessibility, and cross-platform polish
 
+## Release hardening blockers
+
+- Confirm raster OpenStreetMap/Topo tiles on all X-Plane graphics backends.
+- Confirm the white in-app PDF page canvas and page contents on all supported platforms.
+
 Licensed chart products and proprietary Microsoft assets will not be copied.
 OpenEFB will use compatible public, user-provided, or separately licensed data
 sources while preserving the same practical pilot workflow.
