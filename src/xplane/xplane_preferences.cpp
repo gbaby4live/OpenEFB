@@ -28,8 +28,10 @@ DisplayPreferences XPlanePreferences::load_display_preferences() const {
         int version{};
         int high_contrast{};
         int comfort_size{};
-        if (input >> signature >> version >> high_contrast >> comfort_size &&
-            signature == "OpenEFBDisplay" && version == 1) {
+        int legacy_night_mode{};
+        if (input >> signature >> version && signature == "OpenEFBDisplay" &&
+            ((version == 1 && (input >> high_contrast >> comfort_size)) ||
+             (version == 2 && (input >> legacy_night_mode >> high_contrast >> comfort_size)))) {
             preferences.high_contrast = high_contrast != 0;
             preferences.comfort_size = comfort_size != 0;
         }

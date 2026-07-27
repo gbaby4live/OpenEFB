@@ -20,7 +20,8 @@ public:
                 GpuPixelFormat format);
     bool draw(double left, double bottom, double right, double top,
               double u_left = 0.0, double v_bottom = 1.0,
-              double u_right = 1.0, double v_top = 0.0) const;
+              double u_right = 1.0, double v_top = 0.0,
+              bool alpha_blend = false) const;
     [[nodiscard]] std::string status() const;
 
 private:

@@ -3,6 +3,7 @@
 #include "openefb/core/airport_info.hpp"
 #include "openefb/core/briefing_model.hpp"
 #include "openefb/core/flight_plan_model.hpp"
+#include "openefb/core/flight_log_model.hpp"
 #include "openefb/core/faa_chart_catalog.hpp"
 #include "openefb/core/flight_plan_editor.hpp"
 #include "openefb/core/flight_plan_file.hpp"
@@ -547,6 +548,39 @@ int main() {
     std::istringstream invalid_fms{"I\n1100 Version\nNUMENR 2\n1 KSEA ADEP 0 1 2\n"};
     require(!openefb::parse_xplane_fms(invalid_fms).success,
             "incomplete FMS plans are rejected safely");
+
+    openefb::FlightPlanSnapshot log_route;
+    log_route.available = true;
+    log_route.legs = {
+        {0, "KSEA", openefb::WaypointKind::airport, 0, 47.449, -122.309, false},
+        {1, "KPDX", openefb::WaypointKind::airport, 0, 45.589, -122.597, false},
+    };
+    openefb::TelemetrySnapshot log_telemetry;
+    log_telemetry.available = true;
+    log_telemetry.aircraft_name = "C172";
+    log_telemetry.latitude_degrees = 47.449;
+    log_telemetry.longitude_degrees = -122.309;
+    log_telemetry.altitude_feet = 500.0;
+    log_telemetry.ground_speed_knots = 10.0;
+    openefb::FlightLogModel flight_log;
+    flight_log.update(log_telemetry, log_route, true, 1.0);
+    log_telemetry.ground_speed_knots = 70.0;
+    log_telemetry.altitude_feet = 1200.0;
+    log_telemetry.latitude_degrees += 0.01;
+    flight_log.update(log_telemetry, log_route, false, 31.0);
+    require(flight_log.snapshot().airborne && flight_log.snapshot().departure == "KSEA" &&
+                flight_log.snapshot().destination == "KPDX",
+            "flight logger starts airborne route tracking from the active plan");
+    log_telemetry.latitude_degrees += 0.01;
+    log_telemetry.altitude_feet = 2500.0;
+    flight_log.update(log_telemetry, log_route, false, 60.0);
+    log_telemetry.ground_speed_knots = 20.0;
+    log_telemetry.vertical_speed_fpm = -420.0;
+    flight_log.update(log_telemetry, log_route, true, 1.0);
+    require(!flight_log.snapshot().entries.empty() &&
+                flight_log.snapshot().entries.front().maximum_altitude_feet >= 2500.0 &&
+                flight_log.snapshot().entries.front().landing_vertical_speed_fpm == -420.0,
+            "flight logger records landing metrics after a completed flight");
 
     std::cout << "OpenEFB core tests passed\n";
     return EXIT_SUCCESS;

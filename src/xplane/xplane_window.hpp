@@ -6,6 +6,7 @@
 #include "openefb/core/flight_plan_editor.hpp"
 #include "openefb/core/airport_info.hpp"
 #include "openefb/core/fuel_model.hpp"
+#include "openefb/core/flight_log_model.hpp"
 #include "openefb/core/moving_map_model.hpp"
 #include "openefb/core/navigation_database_model.hpp"
 #include "openefb/core/planning_model.hpp"
@@ -66,6 +67,7 @@ public:
                                                  NavigationDatabaseModel& navigation_database_model,
                                                  RouteProgressModel& route_progress_model,
                                                  WeatherModel& weather_model,
+                                                 FlightLogModel& flight_log_model,
                                                  XPlanePreferences& preferences);
 
     ~XPlaneWindow() override;
@@ -98,6 +100,7 @@ private:
                  NavigationDatabaseModel& navigation_database_model,
                  RouteProgressModel& route_progress_model,
                  WeatherModel& weather_model,
+                 FlightLogModel& flight_log_model,
                  XPlanePreferences& preferences);
 
     void render(XPLMWindowID window_id) const;
@@ -108,6 +111,7 @@ private:
     void export_current_route();
     void toggle_high_contrast();
     void toggle_comfort_size();
+    void resize_interface(double factor);
     void handle_editor_key(char key, char virtual_key);
     void handle_airport_key(char key, char virtual_key);
     void handle_briefing_key(char key, char virtual_key);
@@ -137,6 +141,7 @@ private:
     NavigationDatabaseModel& navigation_database_model_;
     RouteProgressModel& route_progress_model_;
     WeatherModel& weather_model_;
+    FlightLogModel& flight_log_model_;
     XPlanePreferences& preferences_;
     mutable XPlaneMapTiles map_tiles_;
     mutable XPlaneMapPois map_pois_;
@@ -150,10 +155,12 @@ private:
     bool map_dragging_{false};
     bool map_drag_moved_{false};
     bool map_filters_open_{false};
+    bool navigation_open_{false};
     bool show_map_aircraft_{true};
     bool show_map_aircraft_info_{true};
     bool show_map_route_{true};
     bool show_map_labels_{true};
+    int map_marker_scale_{100};
     int map_drag_start_x_{};
     int map_drag_start_y_{};
     double map_drag_start_latitude_{};

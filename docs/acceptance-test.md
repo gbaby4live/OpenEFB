@@ -76,3 +76,26 @@ any required item is failing.
 
 Record X-Plane version, graphics backend, operating system, aircraft, and any
 failed step. Map/PDF visibility failures are release blockers, not optional polish.
+# RC16 compact interface and map markers
+
+1. Resize OpenEFB down to approximately AviTab size (360 x 300).
+2. Confirm the sidebar changes into a `PAGES` button and the selected page
+   remains readable without being covered by navigation.
+3. Open `PAGES`, choose several pages from both columns, then close the menu.
+4. Use the compact header `-` and `+` buttons and confirm the window resizes.
+5. On Home, confirm the active route guidance is magenta.
+6. Open Map Filters and confirm Airports, Navaids, and Points of interest can
+   be hidden independently.
+7. Change Icon Size from 75 through 150 percent and confirm airport, VOR, NDB,
+   fix, food, golf, and landmark image markers resize and remain clickable.
+# RC20 map space and automatic briefing synchronization
+
+1. Confirm Home no longer shows the `Live Moving Map` heading and the map uses
+   the reclaimed space.
+2. Load a route with airport departure and destination endpoints.
+3. Confirm Briefing > Library reports that DEP/DEST briefs and charts
+   synchronized and both airport filters remain populated.
+4. Leave the route active and confirm the latest briefing PDFs are regenerated
+   after updated weather arrives or within five minutes.
+5. Confirm existing current-cycle FAA charts are retained without duplicate
+   files and incomplete downloads are retried.

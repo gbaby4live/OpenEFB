@@ -58,6 +58,22 @@ original open-source code and visuals.
   navigation, and removal of thin outer framing that read as skeleton UI
 - RC12: X-Plane texture-backed solid UI fills for deterministic button/card/page
   backgrounds across the Vulkan/Zink graphics bridge
+- RC13: automatic in-session flight logbook with takeoff/landing recognition,
+  route endpoints, airborne time, distance, maximum altitude, and landing rate
+- RC15: brighter, calmer cockpit palette with readable filled controls and
+  solid hover states; appearance-mode switch removed after simulator testing
+- RC16: AviTab-scale responsive window, compact two-column page dropdown,
+  window-size controls, magenta active route guidance, cached image-based map
+  markers, category filters, and 75-150 percent marker scaling
+- RC17: full-height Home map, removal of the Aircraft/Fuel footer cards,
+  white tile canvas, and release information contained in About
+- RC18: window-bound text fitting with measured ellipsis so page, card,
+  control, map, and status labels remain inside compact resized windows
+- RC19: hard window clipping for texture-backed panels, cards, borders, and
+  linework so compact pages cannot render over the simulator outside OpenEFB
+- RC20: header-free expanded Home map plus automatic five-minute DEP/DEST
+  briefing regeneration, current-cycle chart verification, and retry of
+  incomplete online chart downloads throughout the active route
 
 ## Planned operational workflow
 

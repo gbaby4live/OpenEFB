@@ -9,6 +9,7 @@
 
 #include <condition_variable>
 #include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <mutex>
 #include <optional>
@@ -61,6 +62,7 @@ private:
     std::string ready_message_;
     std::string last_endpoints_;
     std::string last_weather_signature_;
+    std::chrono::steady_clock::time_point last_archive_time_{};
     bool refresh_requested_{false};
     std::atomic_bool stopping_{false};
     std::thread worker_;

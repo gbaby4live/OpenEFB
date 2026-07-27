@@ -23,6 +23,7 @@ namespace openefb::xplane {
 namespace {
 
 constexpr float sample_interval_seconds = 2.0F;
+constexpr auto automatic_refresh_interval = std::chrono::minutes(5);
 constexpr std::size_t maximum_catalog_size = 48 * 1024 * 1024;
 constexpr std::size_t maximum_chart_size = 24 * 1024 * 1024;
 
@@ -319,7 +320,13 @@ void XPlaneBriefingLibrary::sample() {
     const std::string weather_signature = weather.departure.airport_id + "\n" +
         weather.departure.metar + "\n" + weather.destination.airport_id + "\n" +
         weather.destination.metar;
-    if (endpoints == last_endpoints_ && weather_signature == last_weather_signature_) return;
+    const auto now = std::chrono::steady_clock::now();
+    const bool route_or_weather_changed =
+        endpoints != last_endpoints_ || weather_signature != last_weather_signature_;
+    const bool periodic_refresh_due =
+        last_archive_time_.time_since_epoch().count() == 0 ||
+        now - last_archive_time_ >= automatic_refresh_interval;
+    if (!route_or_weather_changed && !periodic_refresh_due) return;
 
     ArchiveRequest request;
     request.departure = departure;
@@ -333,6 +340,7 @@ void XPlaneBriefingLibrary::sample() {
     }
     last_endpoints_ = endpoints;
     last_weather_signature_ = weather_signature;
+    last_archive_time_ = now;
     condition_.notify_one();
 }
 
@@ -354,7 +362,8 @@ void XPlaneBriefingLibrary::work() {
         {
             std::lock_guard lock(mutex_);
             ready_entries_ = std::move(entries);
-            ready_message_ = request ? "Airport archive updated" : "Output/preferences/OpenEFB/Library";
+            ready_message_ = request ? "DEP/DEST briefs and charts synchronized"
+                                     : "Output/preferences/OpenEFB/Library";
         }
     }
 }

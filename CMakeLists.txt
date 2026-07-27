@@ -17,6 +17,7 @@ add_library(openefb_core STATIC
     src/core/flight_plan_model.cpp
     src/core/flight_plan_editor.cpp
     src/core/flight_plan_file.cpp
+    src/core/flight_log_model.cpp
     src/core/fuel_model.cpp
     src/core/faa_chart_catalog.cpp
     src/core/map_poi.cpp
@@ -48,6 +49,7 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
         src/xplane/xplane_airport_data.cpp
         src/xplane/xplane_briefing_library.cpp
         src/xplane/xplane_flight_plan.cpp
+        src/xplane/xplane_flight_logger.cpp
         src/xplane/xplane_fuel.cpp
         src/xplane/xplane_gpu_image.cpp
         src/xplane/xplane_menu.cpp

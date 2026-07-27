@@ -61,7 +61,8 @@ public:
     }
 
     bool draw(double left, double bottom, double right, double top,
-              double u_left, double v_bottom, double u_right, double v_top) const {
+              double u_left, double v_bottom, double u_right, double v_top,
+              bool alpha_blend) const {
         if (!texture_ || width_ <= 0 || height_ <= 0) {
             return false;
         }
@@ -70,7 +71,11 @@ public:
         // Bind and fully declare the required state immediately before every
         // raster draw. X-Plane supplies the panel-coordinate matrices.
         XPLMBindTexture2d(static_cast<int>(texture_), 0);
-        XPLMSetGraphicsState(0, 1, 0, 0, 0, 0, 0);
+        XPLMSetGraphicsState(0, 1, 0, 0, alpha_blend ? 1 : 0, 0, 0);
+        if (alpha_blend) {
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        }
         glColor3f(1.0F, 1.0F, 1.0F);
         glBegin(GL_QUADS);
         glTexCoord2d(u_left, v_bottom);
@@ -107,9 +112,10 @@ bool XPlaneGpuImage::upload(int width, int height,
 
 bool XPlaneGpuImage::draw(double left, double bottom, double right, double top,
                           double u_left, double v_bottom,
-                          double u_right, double v_top) const {
+                          double u_right, double v_top,
+                          bool alpha_blend) const {
     return implementation_->draw(left, bottom, right, top,
-                                 u_left, v_bottom, u_right, v_top);
+                                 u_left, v_bottom, u_right, v_top, alpha_blend);
 }
 
 std::string XPlaneGpuImage::status() const {

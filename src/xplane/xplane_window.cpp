@@ -32,8 +32,9 @@ namespace {
 
 constexpr int initial_width = 1000;
 constexpr int initial_height = 700;
-constexpr int minimum_width = 960;
-constexpr int minimum_height = 680;
+constexpr int minimum_width = 360;
+constexpr int minimum_height = 300;
+constexpr int compact_width_threshold = 720;
 
 struct Color {
     float red;
@@ -42,25 +43,47 @@ struct Color {
     float alpha;
 };
 
-constexpr Color canvas{0.125F, 0.137F, 0.145F, 1.0F};
-constexpr Color status_bar{0.060F, 0.070F, 0.075F, 1.0F};
-constexpr Color sidebar{0.090F, 0.100F, 0.105F, 1.0F};
-constexpr Color active_navigation{0.020F, 0.330F, 0.075F, 1.0F};
-constexpr Color card{0.180F, 0.190F, 0.195F, 1.0F};
-constexpr Color accent{0.00F, 0.90F, 1.0F, 1.0F};
-constexpr Color hover_accent{1.0F, 0.88F, 0.0F, 1.0F};
+constexpr Color canvas{0.170F, 0.190F, 0.210F, 1.0F};
+constexpr Color status_bar{0.075F, 0.095F, 0.110F, 1.0F};
+constexpr Color sidebar{0.120F, 0.145F, 0.165F, 1.0F};
+constexpr Color active_navigation{0.025F, 0.420F, 0.115F, 1.0F};
+constexpr Color card{0.235F, 0.265F, 0.285F, 1.0F};
+constexpr Color accent{0.10F, 0.84F, 0.96F, 1.0F};
+constexpr Color hover_accent{1.0F, 0.82F, 0.18F, 1.0F};
 constexpr Color text_primary{1.0F, 1.0F, 1.0F, 1.0F};
-constexpr Color text_muted{0.72F, 0.75F, 0.77F, 1.0F};
-constexpr Color connected{0.00F, 1.0F, 0.20F, 1.0F};
-constexpr Color map_background{0.105F, 0.115F, 0.120F, 1.0F};
-constexpr Color map_grid{0.25F, 0.30F, 0.32F, 1.0F};
-constexpr Color route_line{0.00F, 0.86F, 0.94F, 1.0F};
+constexpr Color text_muted{0.80F, 0.84F, 0.87F, 1.0F};
+constexpr Color connected{0.10F, 1.0F, 0.35F, 1.0F};
+constexpr Color map_grid{0.34F, 0.40F, 0.43F, 1.0F};
+constexpr Color route_line{1.0F, 0.12F, 0.82F, 1.0F};
 bool high_contrast_mode = false;
 int hover_cursor_x{};
 int hover_cursor_y{};
 bool hover_cursor_active{false};
+int text_clip_left{-100000};
+int text_clip_top{100000};
+int text_clip_right{100000};
+int text_clip_bottom{-100000};
 
 std::string shortened(std::string_view value, std::size_t maximum);
+
+bool compact_layout(int left, int right) {
+    return right - left < compact_width_threshold;
+}
+
+int content_left_for(int left, int right) {
+    return compact_layout(left, right) ? left + 12 : left + sidebar_width + 30;
+}
+
+int viewer_left_for(int left, int right) {
+    return compact_layout(left, right) ? left + 8 : left + sidebar_width + 18;
+}
+
+int responsive_card_right(int left, int right, int preferred_minimum = 260) {
+    const int margin = right - left < 520 ? 10 : 28;
+    return std::max(left + std::min(preferred_minimum, std::max(220, right - left - margin)),
+                    right - margin);
+}
+
 
 void prepare_solid_geometry() {
     // Raster images and SDK text both mutate the legacy bridge state. Declare
@@ -106,6 +129,11 @@ bool draw_textured_solid_fill(int left, int top, int right, int bottom, Color co
 }
 
 void draw_rectangle(int left, int top, int right, int bottom, Color color) {
+    left = std::max(left, text_clip_left);
+    right = std::min(right, text_clip_right);
+    top = std::min(top, text_clip_top);
+    bottom = std::max(bottom, text_clip_bottom);
+    if (left >= right || bottom >= top) return;
     if (draw_textured_solid_fill(left, top, right, bottom, color)) return;
     prepare_solid_geometry();
     if (color.alpha < 0.999F) {
@@ -123,6 +151,11 @@ void draw_rectangle(int left, int top, int right, int bottom, Color color) {
 }
 
 void draw_border(int left, int top, int right, int bottom, Color color, float width = 2.0F) {
+    left = std::max(left, text_clip_left);
+    right = std::min(right, text_clip_right);
+    top = std::min(top, text_clip_top);
+    bottom = std::max(bottom, text_clip_bottom);
+    if (left >= right || bottom >= top) return;
     prepare_solid_geometry();
     glColor4f(color.red, color.green, color.blue, color.alpha);
     glLineWidth(width);
@@ -136,6 +169,18 @@ void draw_border(int left, int top, int right, int bottom, Color color, float wi
 }
 
 void draw_line(double x_1, double y_1, double x_2, double y_2, Color color, float width = 1.0F) {
+    if ((x_1 < text_clip_left && x_2 < text_clip_left) ||
+        (x_1 > text_clip_right && x_2 > text_clip_right) ||
+        (y_1 < text_clip_bottom && y_2 < text_clip_bottom) ||
+        (y_1 > text_clip_top && y_2 > text_clip_top)) return;
+    x_1 = std::clamp(x_1, static_cast<double>(text_clip_left),
+                     static_cast<double>(text_clip_right));
+    x_2 = std::clamp(x_2, static_cast<double>(text_clip_left),
+                     static_cast<double>(text_clip_right));
+    y_1 = std::clamp(y_1, static_cast<double>(text_clip_bottom),
+                     static_cast<double>(text_clip_top));
+    y_2 = std::clamp(y_2, static_cast<double>(text_clip_bottom),
+                     static_cast<double>(text_clip_top));
     prepare_solid_geometry();
     glColor4f(color.red, color.green, color.blue, color.alpha);
     glLineWidth(width);
@@ -181,6 +226,8 @@ bool clip_line(double& x_1, double& y_1, double& x_2, double& y_2,
 }
 
 void draw_text(int x, int y, std::string_view value, Color color, XPLMFontID font = xplmFont_Proportional) {
+    if (x < text_clip_left || x >= text_clip_right ||
+        y > text_clip_top || y < text_clip_bottom) return;
     if (high_contrast_mode) {
         color.red = std::max(color.red, 0.88F);
         color.green = std::max(color.green, 0.88F);
@@ -188,6 +235,27 @@ void draw_text(int x, int y, std::string_view value, Color color, XPLMFontID fon
     }
     float rgb[]{color.red, color.green, color.blue};
     std::string mutable_value(value);
+    const float available_width = static_cast<float>(text_clip_right - x - 5);
+    if (available_width <= 4.0F) return;
+    if (XPLMMeasureString(font, mutable_value.c_str(), static_cast<int>(mutable_value.size())) >
+        available_width) {
+        constexpr std::string_view ellipsis = "...";
+        if (XPLMMeasureString(font, ellipsis.data(), static_cast<int>(ellipsis.size())) >
+            available_width) return;
+        std::size_t low = 0;
+        std::size_t high = mutable_value.size();
+        while (low < high) {
+            const std::size_t middle = (low + high + 1) / 2;
+            const std::string candidate = mutable_value.substr(0, middle) + std::string(ellipsis);
+            if (XPLMMeasureString(font, candidate.c_str(), static_cast<int>(candidate.size())) <=
+                available_width) {
+                low = middle;
+            } else {
+                high = middle - 1;
+            }
+        }
+        mutable_value = mutable_value.substr(0, low) + std::string(ellipsis);
+    }
     XPLMDrawString(rgb, x, y, mutable_value.data(), nullptr, font);
 }
 
@@ -250,24 +318,14 @@ void draw_button(int left, int top, int right, int bottom, std::string_view labe
     const bool hovered = hover_cursor_active &&
                          point_in_rectangle(hover_cursor_x, hover_cursor_y,
                                             left, top, right, bottom);
-    const Color fill = hovered ? Color{0.08F, 0.52F, 0.13F, 1.0F}
-        : emphasized ? Color{0.02F, 0.38F, 0.08F, 1.0F}
-                     : Color{0.045F, 0.050F, 0.055F, 1.0F};
+    const Color fill = hovered ? Color{0.10F, 0.52F, 0.18F, 1.0F}
+        : emphasized ? active_navigation
+                     : Color{0.175F, 0.205F, 0.225F, 1.0F};
     draw_rectangle(left, top, right, bottom, fill);
     // Filled control blocks deliberately replace the former thin outline style.
     draw_rectangle(left, top, right, top - 3,
-                   hovered ? hover_accent : (emphasized ? connected : Color{0.22F, 0.24F, 0.25F, 1.0F}));
+                   hovered ? hover_accent : (emphasized ? connected : map_grid));
     draw_shadowed_text(left + 12, bottom + 9, label, text_primary);
-}
-
-std::string format_flight_summary(const TelemetrySnapshot& telemetry) {
-    if (!telemetry.available) {
-        return "Waiting for live simulator data";
-    }
-    char value[96]{};
-    std::snprintf(value, sizeof(value), "Altitude %.0f ft  |  Ground speed %.0f kt",
-                  telemetry.altitude_feet, telemetry.ground_speed_knots);
-    return value;
 }
 
 std::string format_leg_detail(const FlightPlanLeg& leg) {
@@ -294,7 +352,7 @@ std::size_t editor_visible_start(const FlightPlanEditor& editor, std::size_t vis
 
 void draw_flight_plan_editor(const FlightPlanEditor& editor,
                              int left, int top, int right, int bottom) {
-    const int card_right = std::max(left + 420, right - 28);
+    const int card_right = responsive_card_right(left, right, 420);
     draw_text(left, top, "Flight Plan Builder", text_primary, xplmFont_Proportional);
     draw_text(left, top - 27, editor.message(), text_muted);
 
@@ -371,7 +429,7 @@ void draw_flight_plan_page(const FlightPlanSnapshot& flight_plan,
                            const FlightPlanEditor& editor,
                            std::string_view route_file_message,
                            int left, int top, int right, int bottom) {
-    const int card_right = std::max(left + 260, right - 28);
+    const int card_right = responsive_card_right(left, right);
     if (editor.active()) {
         draw_flight_plan_editor(editor, left, top, right, bottom);
         return;
@@ -491,7 +549,7 @@ void draw_weather_card(int left, int top, int right, std::string_view role,
 }
 
 void draw_weather_page(const WeatherSnapshot& weather, int left, int top, int right) {
-    const int card_right = std::max(left + 260, right - 28);
+    const int card_right = responsive_card_right(left, right);
     draw_text(left, top, "Route Weather", text_primary, xplmFont_Proportional);
     draw_text(left, top - 28, "Internet first, with X-Plane weather and saved-cache fallback", text_muted);
     if (!weather.online_status.empty()) draw_text(left + 360, top - 28, weather.online_status, text_muted);
@@ -534,7 +592,7 @@ void draw_progress_card(int left, int top, int right, std::string_view role,
 }
 
 void draw_progress_page(const RouteProgressSnapshot& progress, int left, int top, int right) {
-    const int card_right = std::max(left + 260, right - 28);
+    const int card_right = responsive_card_right(left, right);
     draw_text(left, top, "Route Progress", text_primary, xplmFont_Proportional);
     draw_text(left, top - 28, "Live great-circle estimates from aircraft position and groundspeed", text_muted);
     if (!progress.available) {
@@ -548,16 +606,6 @@ void draw_progress_page(const RouteProgressSnapshot& progress, int left, int top
               "Estimate basis", "Direct distance and current groundspeed");
 }
 
-std::string format_fuel_flow(const FuelSnapshot& fuel) {
-    if (!fuel.endurance_available) {
-        return "Waiting for measurable engine fuel flow";
-    }
-    char value[96]{};
-    std::snprintf(value, sizeof(value), "%.1f GPH  |  US gallons, 6.0 lb/gal basis",
-                  fuel.fuel_flow_us_gallons_per_hour);
-    return value;
-}
-
 std::string format_weight(double kilograms) {
     char value[64]{};
     std::snprintf(value, sizeof(value), "%.0f kg  /  %.0f lb", kilograms, kilograms * 2.2046226218);
@@ -565,7 +613,7 @@ std::string format_weight(double kilograms) {
 }
 
 void draw_planning_page(const PlanningSnapshot& planning, int left, int top, int right) {
-    const int card_right = std::max(left + 260, right - 28);
+    const int card_right = responsive_card_right(left, right);
     draw_text(left, top, "Aircraft Planning", text_primary, xplmFont_Proportional);
     draw_text(left, top - 28, "Live weight, balance, fuel reserve, and landing outlook", text_muted);
     if (!planning.available) {
@@ -706,9 +754,9 @@ struct HomeMapGeometry {
 HomeMapGeometry home_map_geometry(int left, int top, int right, int bottom) {
     HomeMapGeometry geometry;
     geometry.left = left;
-    geometry.top = top - 34;
-    geometry.right = std::max(left + 360, right - 28);
-    geometry.bottom = std::max(bottom + 164, geometry.top - 330);
+    geometry.top = top + 10;
+    geometry.right = responsive_card_right(left, right, 360);
+    geometry.bottom = bottom + 12;
     geometry.tile_top = geometry.top - 38;
     return geometry;
 }
@@ -718,13 +766,13 @@ void draw_map_style_button(int left, int top, int right, std::string_view label,
     const bool hovered = hover_cursor_active &&
                          point_in_rectangle(hover_cursor_x, hover_cursor_y,
                                             left, top, right, bottom);
-    constexpr Color idle_fill{0.040F, 0.045F, 0.050F, 1.0F};
-    constexpr Color selected_fill{0.020F, 0.380F, 0.080F, 1.0F};
-    constexpr Color hover_fill{0.080F, 0.520F, 0.130F, 1.0F};
+    const Color idle_fill{0.175F, 0.205F, 0.225F, 1.0F};
+    const Color selected_fill = active_navigation;
+    const Color hover_fill{0.10F, 0.52F, 0.18F, 1.0F};
     draw_rectangle(left, top, right, bottom,
                    hovered ? hover_fill : (selected ? selected_fill : idle_fill));
     draw_rectangle(left, top, right, top - 3,
-                   hovered ? hover_accent : (selected ? connected : Color{0.22F, 0.24F, 0.25F, 1.0F}));
+                   hovered ? hover_accent : (selected ? connected : map_grid));
     draw_shadowed_text(left + 10, top - 17, label, text_primary, xplmFont_Proportional);
 }
 
@@ -797,6 +845,139 @@ void draw_diamond_marker(int x, int y, Color color) {
     draw_line(x - 6, y, x, y + 6, color, 2.0F);
 }
 
+enum class MarkerIconKind : std::size_t {
+    airport,
+    vor,
+    ndb,
+    fix,
+    food,
+    golf,
+    landmark,
+    count,
+};
+
+MarkerIconKind marker_icon_for(WaypointKind kind) {
+    switch (kind) {
+    case WaypointKind::airport: return MarkerIconKind::airport;
+    case WaypointKind::vor: return MarkerIconKind::vor;
+    case WaypointKind::ndb: return MarkerIconKind::ndb;
+    case WaypointKind::fix: return MarkerIconKind::fix;
+    default: return MarkerIconKind::fix;
+    }
+}
+
+MarkerIconKind marker_icon_for(PoiCategory category) {
+    switch (category) {
+    case PoiCategory::food: return MarkerIconKind::food;
+    case PoiCategory::golf: return MarkerIconKind::golf;
+    case PoiCategory::attraction: return MarkerIconKind::landmark;
+    }
+    return MarkerIconKind::landmark;
+}
+
+class MarkerIconAtlas final {
+public:
+    bool draw(MarkerIconKind kind, int x, int y, int scale_percent) {
+        ensure_loaded();
+        const auto index = static_cast<std::size_t>(kind);
+        if (!images_[index]) return false;
+        const int size = std::clamp(20 * scale_percent / 100, 14, 32);
+        return images_[index]->draw(x - size / 2, y - size / 2,
+                                    x + size / 2, y + size / 2,
+                                    0.0, 1.0, 1.0, 0.0, true);
+    }
+
+private:
+    static constexpr int icon_size = 24;
+
+    void ensure_loaded() {
+        if (loaded_) return;
+        const std::array<std::array<std::uint8_t, 3>, static_cast<std::size_t>(MarkerIconKind::count)> colors{{
+            {35, 225, 255}, {70, 235, 190}, {255, 206, 55}, {226, 95, 255},
+            {255, 145, 48}, {80, 225, 110}, {196, 95, 255},
+        }};
+        for (std::size_t index = 0; index < images_.size(); ++index) {
+            auto pixels = make_icon(static_cast<MarkerIconKind>(index), colors[index]);
+            auto image = std::make_unique<XPlaneGpuImage>();
+            if (image->upload(icon_size, icon_size, pixels, GpuPixelFormat::bgra)) {
+                images_[index] = std::move(image);
+            }
+        }
+        loaded_ = true;
+    }
+
+    static std::vector<std::uint8_t> make_icon(
+        MarkerIconKind kind, const std::array<std::uint8_t, 3>& rgb) {
+        std::vector<std::uint8_t> pixels(icon_size * icon_size * 4, 0);
+        const auto set = [&](int x, int y, std::array<std::uint8_t, 3> color,
+                             std::uint8_t alpha = 255) {
+            if (x < 0 || x >= icon_size || y < 0 || y >= icon_size) return;
+            const auto offset = static_cast<std::size_t>((y * icon_size + x) * 4);
+            pixels[offset] = color[2];
+            pixels[offset + 1] = color[1];
+            pixels[offset + 2] = color[0];
+            pixels[offset + 3] = alpha;
+        };
+        const std::array<std::uint8_t, 3> white{255, 255, 255};
+        for (int y = 1; y < icon_size - 1; ++y) {
+            for (int x = 1; x < icon_size - 1; ++x) {
+                const int dx = x - 11;
+                const int dy = y - 11;
+                if (dx * dx + dy * dy <= 100) set(x, y, rgb, 235);
+            }
+        }
+        for (int angle = 0; angle < 360; angle += 5) {
+            const double radians = angle * 3.14159265358979323846 / 180.0;
+            set(11 + static_cast<int>(std::lround(std::cos(radians) * 10.0)),
+                11 + static_cast<int>(std::lround(std::sin(radians) * 10.0)), white);
+        }
+        if (kind == MarkerIconKind::airport) {
+            for (int value = 5; value <= 17; ++value) {
+                set(value, 10, white); set(value, 11, white); set(10, value, white); set(11, value, white);
+            }
+        } else if (kind == MarkerIconKind::vor) {
+            for (int value = 5; value <= 17; ++value) {
+                set(value, 11, white); set(11, value, white);
+                set(value, 5 + std::abs(value - 11), white);
+            }
+        } else if (kind == MarkerIconKind::ndb) {
+            for (int angle = 0; angle < 360; angle += 12) {
+                const double radians = angle * 3.14159265358979323846 / 180.0;
+                set(11 + static_cast<int>(std::lround(std::cos(radians) * 5.0)),
+                    11 + static_cast<int>(std::lround(std::sin(radians) * 5.0)), white);
+            }
+            set(11, 11, white);
+        } else if (kind == MarkerIconKind::fix) {
+            for (int row = 0; row < 9; ++row) {
+                for (int x = 11 - row / 2; x <= 11 + row / 2; ++x) set(x, 7 + row, white);
+            }
+        } else if (kind == MarkerIconKind::food) {
+            for (int y = 6; y <= 17; ++y) { set(8, y, white); set(14, y, white); }
+            set(6, 6, white); set(7, 6, white); set(9, 6, white); set(10, 6, white);
+        } else if (kind == MarkerIconKind::golf) {
+            for (int y = 5; y <= 18; ++y) set(8, y, white);
+            for (int y = 5; y <= 10; ++y) {
+                for (int x = 9; x <= 15 - (y - 5); ++x) set(x, y, white);
+            }
+        } else {
+            for (int value = 0; value <= 7; ++value) {
+                set(11 - value, 11, white); set(11 + value, 11, white);
+                set(11, 11 - value, white); set(11, 11 + value, white);
+            }
+        }
+        return pixels;
+    }
+
+    std::array<std::unique_ptr<XPlaneGpuImage>,
+               static_cast<std::size_t>(MarkerIconKind::count)> images_{};
+    bool loaded_{false};
+};
+
+bool draw_marker_icon(int x, int y, MarkerIconKind kind, int scale_percent) {
+    static MarkerIconAtlas atlas;
+    return atlas.draw(kind, x, y, scale_percent);
+}
+
 Color poi_color(PoiCategory category) {
     switch (category) {
     case PoiCategory::food: return {1.0F, 0.58F, 0.18F, 1.0F};
@@ -806,21 +987,9 @@ Color poi_color(PoiCategory category) {
     return accent;
 }
 
-void draw_poi_marker(int x, int y, PoiCategory category) {
-    const auto color = poi_color(category);
-    draw_rectangle(x - 7, y + 7, x + 7, y - 7, status_bar);
-    draw_border(x - 7, y + 7, x + 7, y - 7, color, 2.0F);
-    if (category == PoiCategory::food) {
-        draw_line(x - 2, y + 4, x - 2, y - 4, color, 2.0F);
-        draw_line(x + 3, y + 4, x + 3, y - 4, color, 2.0F);
-    } else if (category == PoiCategory::golf) {
-        draw_line(x - 2, y + 5, x - 2, y - 5, color, 2.0F);
-        glColor4f(color.red, color.green, color.blue, color.alpha);
-        glBegin(GL_TRIANGLES);
-        glVertex2i(x - 1, y + 5); glVertex2i(x + 5, y + 2); glVertex2i(x - 1, y);
-        glEnd();
-    } else {
-        draw_diamond_marker(x, y, color);
+void draw_poi_marker(int x, int y, PoiCategory category, int scale_percent) {
+    if (!draw_marker_icon(x, y, marker_icon_for(category), scale_percent)) {
+        draw_diamond_marker(x, y, poi_color(category));
     }
 }
 
@@ -847,7 +1016,7 @@ struct MapFilterGeometry {
 MapFilterGeometry map_filter_geometry(int map_left, int map_top, int map_right) {
     const int right = map_right - 58;
     const int left = std::max(map_left + 10, right - 214);
-    return {left, map_top - 10, right, map_top - 278, map_top - 48};
+    return {left, map_top - 10, right, map_top - 306, map_top - 48};
 }
 
 void draw_filter_row(int left, int top, int right, std::string_view label, bool enabled) {
@@ -863,7 +1032,7 @@ void draw_filter_row(int left, int top, int right, std::string_view label, bool 
 }
 
 void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot& flight_plan,
-                   const RouteProgressSnapshot& progress, const FuelSnapshot& fuel,
+                   const RouteProgressSnapshot& progress,
                    const WeatherSnapshot& weather, const AirspaceSnapshot& airspace,
                    const NavigationDatabaseSnapshot& navigation_database,
                    const MovingMapModel& map, XPlaneMapTiles& tiles, XPlaneMapPois& pois,
@@ -872,14 +1041,10 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
                    const std::optional<MapPoi>& hovered_poi,
                    const std::optional<MapHitTarget>& hovered_target,
                    bool filters_open, bool show_aircraft, bool show_aircraft_info,
-                   bool show_route, bool show_labels,
+                   bool show_route, bool show_labels, int marker_scale,
                    int left, int top, int right, int bottom) {
     hit_targets.clear();
     poi_hit_targets.clear();
-    draw_text(left, top, "Live Moving Map", text_primary, xplmFont_Proportional);
-    draw_text(left + 142, top,
-              "OpenStreetMap  /  wheel zoom  /  drag pan  /  click a place to add it",
-              text_muted);
     const auto panel = home_map_geometry(left, top, right, bottom);
     const int map_left = panel.left + 3;
     const int map_right = panel.right - 3;
@@ -902,7 +1067,8 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
                           "FILTER", filters_open);
 
     draw_text(panel.left + 14, panel.top - 23, map_range_label(map.range_nm()), text_muted);
-    draw_rectangle(map_left, map_top, map_right, map_bottom, map_background);
+    draw_rectangle(map_left, map_top, map_right, map_bottom,
+                   Color{1.0F, 1.0F, 1.0F, 1.0F});
 
     if (!telemetry.available) {
         draw_text(map_left + 22, map_top - 34, "Waiting for live aircraft position...", text_muted);
@@ -947,7 +1113,9 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
             const int marker_x = static_cast<int>(point.x);
             const int marker_y = static_cast<int>(point.y);
             if (airport) {
-                draw_circle_marker(marker_x, marker_y, connected);
+                if (!draw_marker_icon(marker_x, marker_y, MarkerIconKind::airport, marker_scale)) {
+                    draw_circle_marker(marker_x, marker_y, connected);
+                }
                 FlightPlanLeg leg;
                 leg.identifier = nav.identifier;
                 leg.kind = WaypointKind::airport;
@@ -969,7 +1137,9 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
                     ++rendered_map_labels;
                 }
             } else {
-                draw_diamond_marker(marker_x, marker_y, text_muted);
+                if (!draw_marker_icon(marker_x, marker_y, marker_icon_for(nav.kind), marker_scale)) {
+                    draw_diamond_marker(marker_x, marker_y, text_muted);
+                }
             }
             if (++rendered >= 90) break;
         }
@@ -993,7 +1163,7 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
             });
         if (crowded) continue;
         occupied_poi_positions.emplace_back(marker_x, marker_y);
-        draw_poi_marker(marker_x, marker_y, poi.category);
+        draw_poi_marker(marker_x, marker_y, poi.category, marker_scale);
         poi_hit_targets.push_back({marker_x, marker_y, poi});
         if (poi_hit_targets.size() >= 80) break;
     }
@@ -1016,9 +1186,8 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
         double x_2 = route_points[index].x;
         double y_2 = route_points[index].y;
         if (clip_line(x_1, y_1, x_2, y_2, map_left, map_top, map_right, map_bottom)) {
-            draw_line(x_1, y_1, x_2, y_2,
-                      flight_plan.legs[index].active ? accent : route_line,
-                      flight_plan.legs[index].active ? 3.0F : 2.0F);
+            draw_line(x_1, y_1, x_2, y_2, route_line,
+                      flight_plan.legs[index].active ? 4.0F : 2.5F);
         }
     }
 
@@ -1029,13 +1198,21 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
             continue;
         }
         const auto& leg = flight_plan.legs[index];
-        const Color waypoint_color = leg.active ? accent : text_primary;
+        const Color waypoint_color = leg.active ? route_line : text_primary;
         const bool airport_visible = leg.kind == WaypointKind::airport &&
                                      map.layer_enabled(MapLayer::airports);
         const bool navaid_visible = (leg.kind == WaypointKind::vor || leg.kind == WaypointKind::ndb ||
                                      leg.kind == WaypointKind::fix) && map.layer_enabled(MapLayer::navaids);
-        if (airport_visible) draw_circle_marker(static_cast<int>(point.x), static_cast<int>(point.y), waypoint_color);
-        else if (navaid_visible) draw_diamond_marker(static_cast<int>(point.x), static_cast<int>(point.y), waypoint_color);
+        if (airport_visible || navaid_visible) {
+            if (!draw_marker_icon(static_cast<int>(point.x), static_cast<int>(point.y),
+                                  marker_icon_for(leg.kind), marker_scale)) {
+                if (airport_visible) {
+                    draw_circle_marker(static_cast<int>(point.x), static_cast<int>(point.y), waypoint_color);
+                } else {
+                    draw_diamond_marker(static_cast<int>(point.x), static_cast<int>(point.y), waypoint_color);
+                }
+            }
+        }
         else draw_rectangle(static_cast<int>(point.x) - 3, static_cast<int>(point.y) + 3,
                             static_cast<int>(point.x) + 3, static_cast<int>(point.y) - 3,
                             waypoint_color);
@@ -1194,19 +1371,14 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
         row_top -= step;
         draw_filter_row(filters.left + 8, row_top, filters.right - 8, "Points of interest",
                         map.poi_enabled());
+        row_top -= step;
+        draw_rectangle(filters.left + 8, row_top, filters.right - 8, row_top - 24, card);
+        draw_text(filters.left + 16, row_top - 17,
+                  "ICON SIZE  " + std::to_string(marker_scale) + "%", text_primary);
+        draw_button(filters.right - 68, row_top - 1, filters.right - 42, row_top - 23, "-");
+        draw_button(filters.right - 38, row_top - 1, filters.right - 12, row_top - 23, "+");
     }
 
-    const int cards_top = panel.bottom - 16;
-    const int cards_bottom = bottom + 38;
-    const int gap = 12;
-    const int middle = (panel.left + panel.right) / 2;
-    draw_rectangle(panel.left, cards_top, middle - gap / 2, cards_bottom, card);
-    draw_text(panel.left + 16, cards_top - 26, "AIRCRAFT", accent);
-    draw_text(panel.left + 16, cards_top - 53, format_flight_summary(telemetry), text_primary);
-    draw_rectangle(middle + gap / 2, cards_top, panel.right, cards_bottom, card);
-    draw_text(middle + gap / 2 + 16, cards_top - 26, "FUEL", accent);
-    draw_text(middle + gap / 2 + 16, cards_top - 53,
-              fuel.available ? format_fuel_flow(fuel) : "Waiting for live fuel data", text_primary);
 }
 
 std::string runway_detail(const AirportRunway& runway) {
@@ -1242,7 +1414,7 @@ std::string procedure_list(std::string_view label, const std::vector<std::string
 
 void draw_airports_page(std::string_view query, const AirportInfoSnapshot& airport,
                         int left, int top, int right, int bottom) {
-    const int card_right = std::max(left + 420, right - 28);
+    const int card_right = responsive_card_right(left, right, 420);
     draw_text(left, top, "Airport Information", text_primary, xplmFont_Proportional);
     draw_text(left, top - 27, "Runways, frequencies, and procedures from installed X-Plane data", text_muted);
     draw_rectangle(left, top - 45, card_right - 86, top - 80, card);
@@ -1368,7 +1540,7 @@ void draw_briefing_summary(const TelemetrySnapshot& telemetry,
                            const WeatherSnapshot& weather,
                            const PlanningSnapshot& planning,
                            int left, int top, int right) {
-    const int card_right = std::max(left + 420, right - 28);
+    const int card_right = responsive_card_right(left, right, 420);
     const int gap = 12;
     const int middle = (left + card_right) / 2;
     const int left_right = middle - gap / 2;
@@ -1442,7 +1614,7 @@ bool select_library_offset(BriefingModel& briefing, int offset) {
 
 void draw_briefing_library(const BriefingModel& briefing, const FlightPlanSnapshot& flight_plan,
                            int left, int top, int right, int bottom) {
-    const int card_right = std::max(left + 420, right - 28);
+    const int card_right = responsive_card_right(left, right, 420);
     const auto [departure, destination] = briefing_airports(flight_plan);
     draw_button(left, top - 98, left + 90, top - 131,
                 departure.empty() ? "DEP --" : "DEP " + departure,
@@ -1506,7 +1678,7 @@ void draw_briefing_library(const BriefingModel& briefing, const FlightPlanSnapsh
 }
 
 void draw_briefing_checklist(const BriefingModel& briefing, int left, int top, int right) {
-    const int card_right = std::max(left + 420, right - 28);
+    const int card_right = responsive_card_right(left, right, 420);
     char progress[64]{};
     std::snprintf(progress, sizeof(progress), "%zu of %zu complete",
                   briefing.completed_checklist_items(), briefing.checklist().size());
@@ -1527,7 +1699,7 @@ void draw_briefing_checklist(const BriefingModel& briefing, int left, int top, i
 }
 
 void draw_briefing_notes(const BriefingModel& briefing, int left, int top, int right, int bottom) {
-    const int card_right = std::max(left + 420, right - 28);
+    const int card_right = responsive_card_right(left, right, 420);
     draw_text(left, top - 112, "Click the note area and type. Notes save with the EFB window.", text_muted);
     draw_button(card_right - 72, top - 98, card_right, top - 131, "Clear");
     draw_rectangle(left, top - 146, card_right, bottom + 46, card);
@@ -1565,17 +1737,57 @@ void draw_briefing_page(const BriefingModel& briefing, const TelemetrySnapshot& 
     }
 }
 
+std::string log_time(int seconds) {
+    const int hours = seconds / 3600;
+    const int minutes = (seconds % 3600) / 60;
+    char value[32]{};
+    std::snprintf(value, sizeof(value), "%02d:%02d", hours, minutes);
+    return value;
+}
+
+void draw_logbook_page(const FlightLogSnapshot& log, int left, int top, int right) {
+    const int card_right = responsive_card_right(left, right, 420);
+    draw_text(left, top, "Flight Logbook", text_primary, xplmFont_Proportional);
+    draw_text(left, top - 28, "Automatic takeoff, landing, distance, altitude, and landing-rate records", text_muted);
+    draw_card(left, top - 62, card_right, top - 158, log.airborne ? "CURRENT FLIGHT - AIRBORNE" : "CURRENT FLIGHT - ON GROUND",
+              log.departure + "  to  " + log.destination);
+    char details[180]{};
+    std::snprintf(details, sizeof(details), "%s  |  %s  |  %.1f NM  |  max %.0f ft",
+                  log.aircraft_name.c_str(), log_time(log.airborne_seconds).c_str(),
+                  log.distance_nm, log.maximum_altitude_feet);
+    draw_text(left + 16, top - 132, details, log.airborne ? connected : text_primary);
+    draw_text(left, top - 188, "RECENT FLIGHTS", accent, xplmFont_Proportional);
+    if (log.entries.empty()) {
+        draw_card(left, top - 210, card_right, top - 292, "No completed flights yet",
+                  "OpenEFB starts a record after takeoff and saves it when you land.");
+        return;
+    }
+    int row_top = top - 214;
+    for (std::size_t index = 0; index < log.entries.size() && index < 6; ++index) {
+        const auto& entry = log.entries[index];
+        draw_rectangle(left, row_top, card_right, row_top - 42,
+                       index % 2 == 0 ? card : Color{0.145F, 0.155F, 0.160F, 1.0F});
+        char row[220]{};
+        std::snprintf(row, sizeof(row), "%s  %s-%s  |  %s  |  %.1f NM  |  landing %.0f fpm",
+                      entry.aircraft_name.c_str(), entry.departure.c_str(), entry.destination.c_str(),
+                      log_time(entry.airborne_seconds).c_str(), entry.distance_nm,
+                      entry.landing_vertical_speed_fpm);
+        draw_text(left + 14, row_top - 27, shortened(row, 96), text_primary);
+        row_top -= 46;
+    }
+}
+
 void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                        const FlightPlanSnapshot& flight_plan,
                        const FlightPlanEditor& flight_plan_editor,
                        std::string_view route_file_message,
                        std::string_view airport_query,
                        const AirportInfoSnapshot& airport_info,
-                       const FuelSnapshot& fuel,
                        const PlanningSnapshot& planning,
                        const BriefingModel& briefing,
                        const RouteProgressSnapshot& route_progress,
                        const WeatherSnapshot& weather,
+                       const FlightLogSnapshot& flight_log,
                        const AirspaceSnapshot& airspace,
                        const NavigationDatabaseSnapshot& navigation_database,
                        const MovingMapModel& moving_map,
@@ -1586,17 +1798,17 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                        const std::optional<MapHitTarget>& hovered_map_target,
                        bool map_filters_open, bool show_map_aircraft,
                        bool show_map_aircraft_info, bool show_map_route,
-                       bool show_map_labels,
+                       bool show_map_labels, int map_marker_scale,
                        const DisplayPreferences& display_preferences,
                        int left, int top, int right, int bottom) {
-    const int card_right = std::max(left + 260, right - 28);
+    const int card_right = responsive_card_right(left, right);
     switch (page) {
     case EfbPage::home:
-        draw_home_map(telemetry, flight_plan, route_progress, fuel, weather, airspace,
+        draw_home_map(telemetry, flight_plan, route_progress, weather, airspace,
                       navigation_database, moving_map, map_tiles, map_pois, map_hit_targets,
                       poi_hit_targets, hovered_map_poi, hovered_map_target,
                       map_filters_open, show_map_aircraft, show_map_aircraft_info,
-                      show_map_route, show_map_labels,
+                      show_map_route, show_map_labels, map_marker_scale,
                       left, top, right, bottom);
         break;
     case EfbPage::flight_plan:
@@ -1619,6 +1831,9 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         draw_briefing_page(briefing, telemetry, flight_plan, route_progress, weather, planning,
                            left, top, right, bottom);
         break;
+    case EfbPage::logbook:
+        draw_logbook_page(flight_log, left, top, right);
+        break;
     case EfbPage::settings:
         draw_text(left, top, "Settings", text_primary, xplmFont_Proportional);
         draw_text(left, top - 28, "Saved display and accessibility preferences.", text_muted);
@@ -1639,13 +1854,13 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         draw_text(left, top, "About OpenEFB", text_primary, xplmFont_Proportional);
         draw_text(left, top - 28, "An open-source electronic flight bag for X-Plane 12.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Version", "1.0.0 RC12 - texture-backed control fills");
+                  "Version", "OPEN EFB / 1.0 RC20");
         draw_card(left, top - 178, card_right, top - 274,
+                  "Release", "Full-height white map canvas, compact interface, and image markers");
+        draw_card(left, top - 294, card_right, top - 390,
                   "Project", "Built in the open for the flight-sim community");
         break;
     }
-
-    draw_text(left, bottom + 22, "OPEN EFB  /  1.0 RC12", text_muted);
 }
 
 } // namespace
@@ -1665,6 +1880,7 @@ std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, Telemetry
                                                     NavigationDatabaseModel& navigation_database_model,
                                                     RouteProgressModel& route_progress_model,
                                                     WeatherModel& weather_model,
+                                                    FlightLogModel& flight_log_model,
                                                     XPlanePreferences& preferences) {
     auto window = std::unique_ptr<XPlaneWindow>(
         new XPlaneWindow(ui_model, telemetry_model, flight_plan_model, flight_plan_editor,
@@ -1673,7 +1889,7 @@ std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, Telemetry
                          fuel_model, planning_model, briefing_model, briefing_library,
                          moving_map_model, navigation_database_model,
                          route_progress_model,
-                         weather_model, preferences));
+                         weather_model, flight_log_model, preferences));
     if (!window->window_id_) {
         return nullptr;
     }
@@ -1695,6 +1911,7 @@ XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
                            NavigationDatabaseModel& navigation_database_model,
                            RouteProgressModel& route_progress_model,
                            WeatherModel& weather_model,
+                           FlightLogModel& flight_log_model,
                            XPlanePreferences& preferences)
     : ui_model_(ui_model), telemetry_model_(telemetry_model),
       flight_plan_model_(flight_plan_model), flight_plan_editor_(flight_plan_editor),
@@ -1706,6 +1923,7 @@ XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
       navigation_database_model_(navigation_database_model),
       route_progress_model_(route_progress_model),
       weather_model_(weather_model),
+      flight_log_model_(flight_log_model),
       preferences_(preferences), map_tiles_(preferences.map_cache_directory()) {
     display_preferences_ = preferences_.load_display_preferences();
     high_contrast_mode = display_preferences_.high_contrast;
@@ -1784,14 +2002,29 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
     int right{};
     int bottom{};
     XPLMGetWindowGeometry(window_id, &left, &top, &right, &bottom);
+    text_clip_left = left;
+    text_clip_top = top;
+    text_clip_right = right;
+    text_clip_bottom = bottom;
+    const bool compact = compact_layout(left, right);
 
     XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0);
     draw_rectangle(left, top, right, bottom, canvas);
     draw_rectangle(left, top, right, top - status_bar_height, status_bar);
-    draw_rectangle(left, top - status_bar_height, left + sidebar_width, bottom, sidebar);
+    if (!compact) {
+        draw_rectangle(left, top - status_bar_height, left + sidebar_width, bottom, sidebar);
+    }
 
-    draw_text(left + 20, top - 35, "OpenEFB", accent, xplmFont_Proportional);
-    draw_text(left + sidebar_width + 24, top - 35, ui_model_.active_page_title(), text_primary);
+    draw_text(left + (compact ? 12 : 20), top - 35, "OpenEFB", accent, xplmFont_Proportional);
+    if (compact) {
+        draw_text(left + 86, top - 35, shortened(ui_model_.active_page_title(), 8), text_primary);
+        draw_button(right - 146, top - 10, right - 116, top - 44, "-");
+        draw_button(right - 112, top - 10, right - 82, top - 44, "+");
+        draw_button(right - 78, top - 10, right - 8, top - 44,
+                    navigation_open_ ? "CLOSE" : "PAGES", true);
+    } else {
+        draw_text(left + sidebar_width + 24, top - 35, ui_model_.active_page_title(), text_primary);
+    }
     const auto& telemetry = telemetry_model_.snapshot();
     if (telemetry.available) {
         moving_map_model_.update_aircraft_position(telemetry.latitude_degrees,
@@ -1801,35 +2034,39 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
     const std::string_view map_connection = map_source == MapTileSource::online
         ? "MAP ONLINE"
         : map_source == MapTileSource::cache ? "MAP CACHED" : "MAP LOADING";
-    draw_text(right - 318, top - 35, map_connection,
-              map_source == MapTileSource::online ? connected : text_muted);
-    draw_text(right - 206, top - 35, telemetry.available ? "LIVE DATA" : "WAITING",
-              telemetry.available ? connected : text_muted);
-    draw_text(right - 92, top - 35, utc_time(), text_muted);
-
-    const auto& items = navigation_items();
-    for (std::size_t index = 0; index < items.size(); ++index) {
-        const int local_top = navigation_top + static_cast<int>(index) * (navigation_item_height + navigation_item_gap);
-        const int item_top = top - local_top;
-        const bool selected = items[index].page == ui_model_.active_page();
-        const bool hovered = hover_cursor_active && point_in_rectangle(
-            hover_cursor_x, hover_cursor_y, left + 12, item_top,
-            left + sidebar_width - 12, item_top - navigation_item_height);
-        if (selected || hovered) {
-            draw_rectangle(left + 12, item_top, left + sidebar_width - 12,
-                            item_top - navigation_item_height,
-                           selected ? active_navigation : Color{0.055F, 0.060F, 0.065F, 1.0F});
-        }
-        if (selected || hovered) {
-            draw_rectangle(left + 12, item_top, left + 16,
-                           item_top - navigation_item_height,
-                           hovered ? hover_accent : connected);
-        }
-        draw_shadowed_text(left + 28, item_top - 28, items[index].label,
-                           selected || hovered ? text_primary : text_muted);
+    if (!compact) {
+        draw_text(right - 318, top - 35, map_connection,
+                  map_source == MapTileSource::online ? connected : text_muted);
+        draw_text(right - 206, top - 35, telemetry.available ? "LIVE DATA" : "WAITING",
+                  telemetry.available ? connected : text_muted);
+        draw_text(right - 92, top - 35, utc_time(), text_muted);
     }
 
-    const int content_left = left + sidebar_width + 30;
+    const auto& items = navigation_items();
+    if (!compact) {
+        for (std::size_t index = 0; index < items.size(); ++index) {
+            const int local_top = navigation_top + static_cast<int>(index) * (navigation_item_height + navigation_item_gap);
+            const int item_top = top - local_top;
+            const bool selected = items[index].page == ui_model_.active_page();
+            const bool hovered = hover_cursor_active && point_in_rectangle(
+                hover_cursor_x, hover_cursor_y, left + 12, item_top,
+                left + sidebar_width - 12, item_top - navigation_item_height);
+            if (selected || hovered) {
+                draw_rectangle(left + 12, item_top, left + sidebar_width - 12,
+                                item_top - navigation_item_height,
+                               selected ? active_navigation : card);
+            }
+            if (selected || hovered) {
+                draw_rectangle(left + 12, item_top, left + 16,
+                               item_top - navigation_item_height,
+                               hovered ? hover_accent : connected);
+            }
+            draw_shadowed_text(left + 28, item_top - 28, items[index].label,
+                               selected || hovered ? text_primary : text_muted);
+        }
+    }
+
+    const int content_left = content_left_for(left, right);
     const int content_top = top - status_bar_height - 38;
     draw_rectangle(content_left - 18, content_top + 22, right - 10, bottom + 10, sidebar);
     draw_rectangle(content_left - 14, content_top + 18, right - 14, bottom + 14,
@@ -1838,15 +2075,34 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
                       flight_plan_editor_,
                       route_file_message_,
                       airport_query_, airport_info_model_.snapshot(),
-                      fuel_model_.snapshot(), planning_model_.snapshot(), briefing_model_,
+                      planning_model_.snapshot(), briefing_model_,
                       route_progress_model_.snapshot(),
-                      weather_model_.snapshot(), airspace_model_.snapshot(),
+                      weather_model_.snapshot(), flight_log_model_.snapshot(), airspace_model_.snapshot(),
                       navigation_database_model_.snapshot(), moving_map_model_, map_tiles_, map_pois_,
                       map_hit_targets_, poi_hit_targets_, hovered_map_poi_, hovered_map_target_,
                       map_filters_open_, show_map_aircraft_, show_map_aircraft_info_,
-                      show_map_route_, show_map_labels_,
+                      show_map_route_, show_map_labels_, map_marker_scale_,
                       display_preferences_,
                       content_left, content_top, right, bottom);
+    if (compact && navigation_open_) {
+        const int menu_left = left + 8;
+        const int menu_right = right - 8;
+        const int menu_top = top - status_bar_height - 4;
+        const int column_width = (menu_right - menu_left - 6) / 2;
+        const int row_height = 38;
+        draw_rectangle(menu_left, menu_top, menu_right, menu_top - 5 * (row_height + 4) - 8,
+                       status_bar);
+        for (std::size_t index = 0; index < items.size(); ++index) {
+            const int column = static_cast<int>(index / 5);
+            const int row = static_cast<int>(index % 5);
+            const int item_left = menu_left + 6 + column * column_width;
+            const int item_right = item_left + column_width - 6;
+            const int item_top = menu_top - 6 - row * (row_height + 4);
+            draw_rectangle(item_left, item_top, item_right, item_top - row_height,
+                           items[index].page == ui_model_.active_page() ? active_navigation : card);
+            draw_text(item_left + 10, item_top - 24, items[index].label, text_primary);
+        }
+    }
     if (ui_model_.active_page() == EfbPage::home && !map_action_message_.empty()) {
         const auto panel = home_map_geometry(content_left, content_top, right, bottom);
         const int toast_left = panel.left + 14;
@@ -1927,7 +2183,7 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
                     dialog_right - 14, dialog_bottom + 10, "Add FMS", true);
     }
     if (pdf_viewer_.visible()) {
-        const int viewer_left = left + sidebar_width + 18;
+        const int viewer_left = viewer_left_for(left, right);
         const int viewer_right = right - 18;
         const int viewer_top = top - status_bar_height - 14;
         const int viewer_bottom = bottom + 18;
@@ -2066,6 +2322,17 @@ void XPlaneWindow::toggle_comfort_size() {
                           std::min(bottom, top - 700));
 }
 
+void XPlaneWindow::resize_interface(double factor) {
+    if (!window_id_ || factor <= 0.0) return;
+    int left{}, top{}, right{}, bottom{};
+    XPLMGetWindowGeometry(window_id_, &left, &top, &right, &bottom);
+    const int width = std::clamp(static_cast<int>(std::lround((right - left) * factor)),
+                                 minimum_width, 1600);
+    const int height = std::clamp(static_cast<int>(std::lround((top - bottom) * factor)),
+                                  minimum_height, 1200);
+    XPLMSetWindowGeometry(window_id_, left, top, left + width, top - height);
+}
+
 void XPlaneWindow::handle_editor_key(char key, char virtual_key) {
     if (!flight_plan_editor_.active()) {
         return;
@@ -2169,7 +2436,7 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
     XPLMGetWindowGeometry(window_id, &left, &top, &right, &bottom);
     if (status != xplm_MouseDown) {
         if (window->ui_model_.active_page() == EfbPage::home && window->map_dragging_) {
-            const int content_left = left + sidebar_width + 30;
+            const int content_left = content_left_for(left, right);
             const int content_top = top - status_bar_height - 38;
             const auto panel = home_map_geometry(content_left, content_top, right, bottom);
             const int map_left = panel.left + 3;
@@ -2220,8 +2487,47 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
         }
         return 1;
     }
+    if (compact_layout(left, right)) {
+        if (y <= top - 10 && y >= top - 44) {
+            if (x >= right - 146 && x <= right - 116) {
+                window->resize_interface(0.87);
+                return 1;
+            }
+            if (x >= right - 112 && x <= right - 82) {
+                window->resize_interface(1.15);
+                return 1;
+            }
+        }
+        if (x >= right - 78 && x <= right - 8 && y <= top - 10 && y >= top - 44) {
+            window->navigation_open_ = !window->navigation_open_;
+            return 1;
+        }
+        if (window->navigation_open_) {
+            const auto& items = navigation_items();
+            const int menu_left = left + 8;
+            const int menu_right = right - 8;
+            const int menu_top = top - status_bar_height - 4;
+            const int column_width = (menu_right - menu_left - 6) / 2;
+            constexpr int row_height = 38;
+            for (std::size_t index = 0; index < items.size(); ++index) {
+                const int column = static_cast<int>(index / 5);
+                const int row = static_cast<int>(index % 5);
+                const int item_left = menu_left + 6 + column * column_width;
+                const int item_right = item_left + column_width - 6;
+                const int item_top = menu_top - 6 - row * (row_height + 4);
+                if (point_in_rectangle(x, y, item_left, item_top,
+                                       item_right, item_top - row_height)) {
+                    window->ui_model_.select_page(items[index].page);
+                    window->navigation_open_ = false;
+                    return 1;
+                }
+            }
+            window->navigation_open_ = false;
+            return 1;
+        }
+    }
     if (window->pdf_viewer_.visible()) {
-        const int viewer_left = left + sidebar_width + 18;
+        const int viewer_left = viewer_left_for(left, right);
         const int viewer_right = right - 18;
         const int viewer_bottom = bottom + 18;
         if (y <= viewer_bottom + 44 && y >= viewer_bottom + 12) {
@@ -2241,7 +2547,7 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
         return 1;
     }
     if (window->pending_map_navigation_) {
-        const int content_left = left + sidebar_width + 30;
+        const int content_left = content_left_for(left, right);
         const int content_top = top - status_bar_height - 38;
         const auto panel = home_map_geometry(content_left, content_top, right, bottom);
         const int dialog_right = panel.right - 18;
@@ -2281,7 +2587,7 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
         return 1;
     }
     if (window->ui_model_.active_page() == EfbPage::briefing) {
-        const int content_left = left + sidebar_width + 30;
+        const int content_left = content_left_for(left, right);
         const int content_top = top - status_bar_height - 38;
         int tab_left = content_left;
         if (y <= content_top - 45 && y >= content_top - 78) {
@@ -2302,7 +2608,7 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
                 tab_left += 98;
             }
         }
-        const int card_right = std::max(content_left + 420, right - 28);
+        const int card_right = responsive_card_right(content_left, right, 420);
         if (window->briefing_model_.active_tab() == BriefingTab::library) {
             const auto [departure, destination] = briefing_airports(window->flight_plan_model_.snapshot());
             if (y <= content_top - 98 && y >= content_top - 131) {
@@ -2372,7 +2678,7 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
         }
     }
     if (window->ui_model_.active_page() == EfbPage::planning) {
-        const int content_left = left + sidebar_width + 30;
+        const int content_left = content_left_for(left, right);
         const int content_top = top - status_bar_height - 38;
         if (y <= content_top - 293 && y >= content_top - 326) {
             if (x >= content_left && x <= content_left + 58) {
@@ -2386,9 +2692,9 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
         }
     }
     if (window->ui_model_.active_page() == EfbPage::airports) {
-        const int content_left = left + sidebar_width + 30;
+        const int content_left = content_left_for(left, right);
         const int content_top = top - status_bar_height - 38;
-        const int card_right = std::max(content_left + 420, right - 28);
+        const int card_right = responsive_card_right(content_left, right, 420);
         if (x >= content_left && x <= card_right &&
             y <= content_top - 45 && y >= content_top - 80) {
             XPLMTakeKeyboardFocus(window_id);
@@ -2397,9 +2703,9 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
         }
     }
     if (window->ui_model_.active_page() == EfbPage::flight_plan) {
-        const int content_left = left + sidebar_width + 30;
+        const int content_left = content_left_for(left, right);
         const int content_top = top - status_bar_height - 38;
-        const int card_right = std::max(content_left + 420, right - 28);
+        const int card_right = responsive_card_right(content_left, right, 420);
         if (!window->flight_plan_editor_.active()) {
             if (y <= content_top + 8 && y >= content_top - 23) {
                 if (x >= card_right - 338 && x <= card_right - 224) {
@@ -2476,9 +2782,9 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
         }
     }
     if (window->ui_model_.active_page() == EfbPage::settings) {
-        const int content_left = left + sidebar_width + 30;
+        const int content_left = content_left_for(left, right);
         const int content_top = top - status_bar_height - 38;
-        const int card_right = std::max(content_left + 260, right - 28);
+        const int card_right = responsive_card_right(content_left, right);
         if (x >= card_right - 122 && x <= card_right - 18) {
             if (y <= content_top - 207 && y >= content_top - 240) {
                 window->toggle_high_contrast();
@@ -2491,7 +2797,7 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
         }
     }
     if (window->ui_model_.active_page() == EfbPage::home) {
-        const int content_left = left + sidebar_width + 30;
+        const int content_left = content_left_for(left, right);
         const int content_top = top - status_bar_height - 38;
         const auto panel = home_map_geometry(content_left, content_top, right, bottom);
         const int topo_right = panel.right - 10;
@@ -2539,6 +2845,17 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
                     default: break;
                     }
                     return 1;
+                }
+                const int scale_top = filters.first_row_top - 9 * step;
+                if (y <= scale_top && y >= scale_top - 24) {
+                    if (x >= filters.right - 68 && x <= filters.right - 42) {
+                        window->map_marker_scale_ = std::max(75, window->map_marker_scale_ - 25);
+                        return 1;
+                    }
+                    if (x >= filters.right - 38 && x <= filters.right - 12) {
+                        window->map_marker_scale_ = std::min(150, window->map_marker_scale_ + 25);
+                        return 1;
+                    }
                 }
                 return 1;
             }
@@ -2589,8 +2906,10 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
             window->map_action_message_ = "Map centered on aircraft";
             return 1;
         }
+        const int marker_hit_radius = std::max(10, window->map_marker_scale_ * 10 / 100);
         for (const auto& target : window->poi_hit_targets_) {
-            if (std::abs(x - target.x) <= 10 && std::abs(y - target.y) <= 10) {
+            if (std::abs(x - target.x) <= marker_hit_radius &&
+                std::abs(y - target.y) <= marker_hit_radius) {
                 FlightPlanLeg leg;
                 leg.identifier = "POI";
                 leg.kind = WaypointKind::coordinate;
@@ -2605,7 +2924,8 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
             }
         }
         for (const auto& target : window->map_hit_targets_) {
-            if (std::abs(x - target.x) <= 11 && std::abs(y - target.y) <= 11) {
+            if (std::abs(x - target.x) <= marker_hit_radius &&
+                std::abs(y - target.y) <= marker_hit_radius) {
                 window->pending_map_navigation_ = PendingMapNavigation{
                     target.leg, target.leg.identifier, "Airport waypoint"};
                 window->map_action_message_.clear();
@@ -2627,7 +2947,9 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
             return 1;
         }
     }
-    window->ui_model_.select_at(x - left, top - y);
+    if (!compact_layout(left, right)) {
+        window->ui_model_.select_at(x - left, top - y);
+    }
     return 1;
 }
 
@@ -2655,8 +2977,10 @@ XPLMCursorStatus XPlaneWindow::handle_cursor(XPLMWindowID window_id, int x, int 
         window->hovered_map_target_.reset();
         return xplm_CursorDefault;
     }
+    const int marker_hit_radius = std::max(10, window->map_marker_scale_ * 10 / 100);
     for (const auto& target : window->poi_hit_targets_) {
-        if (std::abs(x - target.x) <= 10 && std::abs(y - target.y) <= 10) {
+        if (std::abs(x - target.x) <= marker_hit_radius &&
+            std::abs(y - target.y) <= marker_hit_radius) {
             window->hovered_map_poi_ = target.poi;
             window->hovered_map_target_.reset();
             return xplm_CursorArrow;
@@ -2664,7 +2988,8 @@ XPLMCursorStatus XPlaneWindow::handle_cursor(XPLMWindowID window_id, int x, int 
     }
     window->hovered_map_poi_.reset();
     for (const auto& target : window->map_hit_targets_) {
-        if (std::abs(x - target.x) <= 11 && std::abs(y - target.y) <= 11) {
+        if (std::abs(x - target.x) <= marker_hit_radius &&
+            std::abs(y - target.y) <= marker_hit_radius) {
             window->hovered_map_target_ = target;
             return xplm_CursorArrow;
         }
@@ -2672,7 +2997,7 @@ XPLMCursorStatus XPlaneWindow::handle_cursor(XPLMWindowID window_id, int x, int 
     window->hovered_map_target_.reset();
     int left{}, top{}, right{}, bottom{};
     XPLMGetWindowGeometry(window_id, &left, &top, &right, &bottom);
-    const int content_left = left + sidebar_width + 30;
+    const int content_left = content_left_for(left, right);
     const int content_top = top - status_bar_height - 38;
     const auto panel = home_map_geometry(content_left, content_top, right, bottom);
     if (x >= panel.left && x <= panel.right && y <= panel.tile_top && y >= panel.bottom) {
@@ -2692,7 +3017,7 @@ int XPlaneWindow::handle_wheel(XPLMWindowID window_id, int x, int y, int, int cl
     int bottom{};
     XPLMGetWindowGeometry(window_id, &left, &top, &right, &bottom);
     if (window->pdf_viewer_.visible()) {
-        const int viewer_left = left + sidebar_width + 18;
+        const int viewer_left = viewer_left_for(left, right);
         const int viewer_right = right - 18;
         const int viewer_top = top - status_bar_height - 14;
         const int viewer_bottom = bottom + 18;
@@ -2708,7 +3033,7 @@ int XPlaneWindow::handle_wheel(XPLMWindowID window_id, int x, int y, int, int cl
     }
     if (window->ui_model_.active_page() == EfbPage::briefing &&
         window->briefing_model_.active_tab() == BriefingTab::library) {
-        const int content_left = left + sidebar_width + 30;
+        const int content_left = content_left_for(left, right);
         const int content_top = top - status_bar_height - 38;
         if (x < content_left || x > right - 28 || y > content_top - 140 || y < bottom + 40) return 0;
         const int direction = clicks < 0 ? 1 : -1;
@@ -2719,7 +3044,7 @@ int XPlaneWindow::handle_wheel(XPLMWindowID window_id, int x, int y, int, int cl
     }
     if (window->ui_model_.active_page() == EfbPage::flight_plan &&
         window->flight_plan_editor_.active()) {
-        const int content_left = left + sidebar_width + 30;
+        const int content_left = content_left_for(left, right);
         const int content_top = top - status_bar_height - 38;
         if (x < content_left || x > right - 28 || y > content_top || y < bottom + 40) {
             return 0;
@@ -2737,7 +3062,7 @@ int XPlaneWindow::handle_wheel(XPLMWindowID window_id, int x, int y, int, int cl
     if (window->ui_model_.active_page() != EfbPage::home) {
         return 0;
     }
-    const int content_left = left + sidebar_width + 30;
+    const int content_left = content_left_for(left, right);
     const int content_top = top - status_bar_height - 38;
     const auto panel = home_map_geometry(content_left, content_top, right, bottom);
     if (x < panel.left || x > panel.right || y > panel.tile_top || y < panel.bottom) {
