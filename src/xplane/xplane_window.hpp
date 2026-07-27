@@ -144,10 +144,16 @@ private:
     mutable std::vector<MapHitTarget> map_hit_targets_;
     mutable std::vector<PoiHitTarget> poi_hit_targets_;
     mutable std::optional<MapPoi> hovered_map_poi_;
+    mutable std::optional<MapHitTarget> hovered_map_target_;
     std::optional<PendingMapNavigation> pending_map_navigation_;
     std::string map_action_message_;
     bool map_dragging_{false};
     bool map_drag_moved_{false};
+    bool map_filters_open_{false};
+    bool show_map_aircraft_{true};
+    bool show_map_aircraft_info_{true};
+    bool show_map_route_{true};
+    bool show_map_labels_{true};
     int map_drag_start_x_{};
     int map_drag_start_y_{};
     double map_drag_start_latitude_{};

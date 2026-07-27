@@ -40,6 +40,8 @@ public:
     void select_style(MapStyle style) noexcept;
     [[nodiscard]] bool layer_enabled(MapLayer layer) const noexcept;
     void toggle_layer(MapLayer layer) noexcept;
+    [[nodiscard]] bool poi_enabled() const noexcept;
+    void toggle_pois() noexcept;
 
     bool zoom_in() noexcept;
     bool zoom_out() noexcept;
@@ -65,9 +67,9 @@ public:
                                           double north_nm) const noexcept;
 
 private:
-    static constexpr std::array ranges_nm_{0.02, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0,
-                                           5.0, 10.0, 20.0, 40.0, 80.0, 160.0, 320.0};
-    std::size_t zoom_level_{10};
+    static constexpr std::array ranges_nm_{0.005, 0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1.0,
+                                           2.0, 5.0, 10.0, 20.0, 40.0, 80.0, 160.0, 320.0};
+    std::size_t zoom_level_{12};
     MapStyle style_{MapStyle::street};
     std::array<bool, 7> layers_{true, true, true, false, true, true, true};
     bool following_aircraft_{true};

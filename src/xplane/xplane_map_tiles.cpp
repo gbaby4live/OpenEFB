@@ -86,7 +86,10 @@ double world_y(double latitude, int zoom) {
 int tile_zoom(MapStyle style, const MapTileViewport& viewport) {
     const double radius_pixels = std::max(40.0, std::min(viewport.right - viewport.left,
                                                          viewport.top - viewport.bottom) * 0.46);
-    const double pixels_per_nm = radius_pixels / std::max(1.0, viewport.range_nm);
+    // Preserve the requested ground scale below one nautical mile. The former
+    // 1 NM clamp made the overlay report airport-level ranges while continuing
+    // to request regional, low-detail tiles.
+    const double pixels_per_nm = radius_pixels / std::max(0.005, viewport.range_nm);
     const double latitude_scale = std::max(0.05, std::cos(clamp_latitude(viewport.latitude_degrees) * pi / 180.0));
     const double zoom = std::log2(21600.0 * latitude_scale * pixels_per_nm / tile_size);
     const int maximum_zoom = style == MapStyle::street ? 19 : 17;
@@ -142,7 +145,7 @@ std::vector<std::uint8_t> download_tile(const TileKey& key) {
                               : L"a.tile.opentopomap.org";
     const std::wstring path = L"/" + std::to_wstring(key.zoom) + L"/" +
                               std::to_wstring(key.x) + L"/" + std::to_wstring(key.y) + L".png";
-    HINTERNET session = WinHttpOpen(L"OpenEFB/1.0.0-rc6 (+https://github.com/Gbaby4live/OpenEFB)",
+    HINTERNET session = WinHttpOpen(L"OpenEFB/1.0.0-rc12 (+https://github.com/Gbaby4live/OpenEFB)",
                                     WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) {

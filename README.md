@@ -96,6 +96,52 @@ Confirmed places are inserted after the active FMS leg instead of replacing the
 route. It also corrects the current FAA d-TPP catalog filename, accepts larger
 official chart PDFs, replaces generated status text with PDFs, and presents
 TXT/Markdown library files as converted in-app PDF entries.
+RC7 makes all map annotations readable over detailed tiles with opaque,
+high-contrast label badges and consistent simulator-native proportional typography.
+Airport and place hover cards are compact, and the
+route confirmation is now a small light-surface card that shows the place,
+category, and coordinates without covering the map. Dedicated zoom, departure,
+arrival, and aircraft-centering controls provide the familiar live-map workflow.
+One POI control shows or hides Food, Golf, and Sights together while preserving
+their distinct marker colors, icons, and descriptions.
+The tactical visual pass removes circular range rings, replaces circular status
+markers with corner reticles, and uses a recognizable white mini-airplane with a
+cyan outline for live position. Map buttons use a compact deep-navy fill, white
+shadowed labels, crisp borders, and a brighter solid hover state so every action
+remains legible against detailed terrain.
+
+Version 1.0.0 RC8 fixes solid overlays at the graphics-state boundary so map
+textures cannot leak into buttons, labels, notifications, or selection cards.
+It adds a Sky4Sim-inspired Map Filters panel for aircraft, live aircraft
+information, flight plan, labels, weather, airports, navaids, airspace, and POIs.
+A compact ALT/GS/HDG strip accompanies the existing zoom, DEP, ARR, HOME,
+Street, and Topo tools. RC8 also removes the false sub-1-NM tile clamp, reaches
+a 0.005 NM map radius, and removes the unnecessary center guide lines.
+
+Version 1.0.0 RC9 consolidates every optional map overlay inside Map Filters;
+the map header now contains only Filter, Street, and Topo. The complete OpenEFB
+interface uses an XP-Career-inspired charcoal surface hierarchy with black
+toolbars, green primary states, cyan informational accents, yellow hover borders,
+filled buttons, and consistent X-Plane proportional sans-serif typography.
+
+Version 1.0.0 RC10 makes solid UI state explicit before every primitive so the
+old canvas or active map texture cannot bleed through cards and buttons. It adds
+separate shell, page, overlay, scrim, and modal layers; an opaque contextual map
+menu with Center, Airport Details, and Add FMS actions; a larger layout-safe
+minimum window; and zoom-aware label collision avoidance. Existing OpenEFB
+weather, airport lookup, route editing, FMS sync, PDF viewing, and briefing notes
+cover the corresponding high-value Sky4Sim workflows without proprietary assets.
+
+Version 1.0.0 RC11 forces opaque controls to render with blending disabled,
+then restores blending only for intentionally translucent overlays. Buttons and
+map controls are filled blocks with strong state strips instead of thin outlined
+"skeleton" boxes; navigation uses filled rows and a left state rail, while the
+unnecessary outer page and map frame borders are removed.
+
+Version 1.0.0 RC12 replaces opaque immediate-mode fills with tiny opaque textures
+drawn through X-Plane's own image bridge. This is the same proven renderer used
+for the visible map tiles and ensures every button, card, navigation row, and
+page surface has a real solid fill on Vulkan/Zink instead of a hollow outline.
 
 Fuel flow is displayed in US gallons per hour using the standard avgas density
 of 6.0 lb per US gallon. Remaining fuel mass stays visible in kilograms and
@@ -103,17 +149,20 @@ pounds because X-Plane reports fuel internally by mass.
 
 Home now contains a large bordered live-map panel without taking over the full
 page. On Windows, it loads OpenStreetMap Street tiles by default and offers a
-one-click OpenTopoMap Topo view. It overlays range rings, aircraft heading, the
+one-click OpenTopoMap Topo view. It overlays aircraft heading, the
 programmed route, the active leg, key waypoint labels, destination distance and
-ETE, and supports mouse-wheel zoom from 0.02 to 320 nautical miles. Visible tiles
+ETE, and supports mouse-wheel zoom from 0.005 to 320 nautical miles. Visible tiles
 are loaded in the background, cached locally, and credited inside the map;
 aircraft and fuel summaries remain visible below the panel. A source label shows
 whether the visible basemap came from the network, cache, or vector fallback.
 The map can be dragged away from the aircraft, zoomed around the pointer, and
-returned to live position with HOME. Food, Golf, and Sights are separate layers;
+returned to live position with HOME. Food, Golf, and Sights share one POI layer;
 hovering a marker identifies it and clicking it offers an opaque confirmation
 before inserting the coordinate into the active X-Plane FMS route.
 Internet access is required for tiles not already cached. The native tile adapter
+requests the true sub-1-NM tile scale instead of clamping airport views to a
+regional zoom, allowing Street tiles to reach zoom 19 and Topo tiles to reach
+zoom 17 without falsely enlarging a lower-detail image.
 for macOS and Linux is planned; those builds retain the vector map fallback.
 
 Flight Plan now includes an interactive builder with clearly labeled Departure

@@ -107,7 +107,7 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
   independent dragged center and uses a heading-oriented aircraft symbol.
 - The renderer clips route segments to the map viewport and distinguishes the
   active leg, route waypoints, endpoints, and destination progress.
-- Mouse-wheel zoom ranges from 320 NM to 0.02 NM and preserves the coordinate
+- Mouse-wheel zoom ranges from 320 NM to 0.005 NM and preserves the coordinate
   beneath the pointer. Dragging pans without simulator writes and HOME restores
   live-aircraft tracking. Projection math remains in the core and is unit tested.
 - `XPlaneMapTiles` requests only the raster tiles visible in the current panel.

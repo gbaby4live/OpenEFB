@@ -43,6 +43,21 @@ original open-source code and visuals.
 - RC6: OpenStreetMap POI layers, hover identification, FMS route insertion,
   drag/pointer-centered deep zoom, aircraft recentering, opaque content layers,
   corrected FAA chart retrieval, and an all-PDF visible document workflow
+- RC7: tile-safe high-contrast labels, consistent proportional map typography,
+  one POI switch, compact airport/place information and route-action cards,
+  zoom/departure/arrival/aircraft map controls, filled tactical buttons,
+  bracket reticles, shared hover feedback, and a mini-airplane position symbol
+- RC8: guaranteed opaque post-tile overlays, true airport-detail tile scaling,
+  a Sky4Sim-inspired filter panel, optional aircraft/ALT-GS-HDG/route/label
+  displays, and removal of unnecessary center guide lines
+- RC9: Filter/Street/Topo-only map header and a unified XP-Career-inspired
+  charcoal, green, cyan, yellow, filled-control, proportional-type visual system
+- RC10: graphics-state-isolated shell/page/overlay/modal layers, contextual map
+  actions, airport-detail handoff, map-to-FMS plotting, and collision-aware labels
+- RC11: blend-disabled opaque control fills, state-strip buttons, filled sidebar
+  navigation, and removal of thin outer framing that read as skeleton UI
+- RC12: X-Plane texture-backed solid UI fills for deterministic button/card/page
+  backgrounds across the Vulkan/Zink graphics bridge
 
 ## Planned operational workflow
 

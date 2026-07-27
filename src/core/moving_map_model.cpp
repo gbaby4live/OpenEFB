@@ -44,6 +44,18 @@ void MovingMapModel::toggle_layer(MapLayer layer) noexcept {
     layers_[index] = !layers_[index];
 }
 
+bool MovingMapModel::poi_enabled() const noexcept {
+    return layer_enabled(MapLayer::food) || layer_enabled(MapLayer::golf) ||
+           layer_enabled(MapLayer::attractions);
+}
+
+void MovingMapModel::toggle_pois() noexcept {
+    const bool enabled = !poi_enabled();
+    layers_[static_cast<std::size_t>(MapLayer::food)] = enabled;
+    layers_[static_cast<std::size_t>(MapLayer::golf)] = enabled;
+    layers_[static_cast<std::size_t>(MapLayer::attractions)] = enabled;
+}
+
 bool MovingMapModel::zoom_in() noexcept {
     if (zoom_level_ == 0) {
         return false;

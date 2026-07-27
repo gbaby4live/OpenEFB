@@ -19,9 +19,33 @@ any required item is failing.
 - Confirm live aircraft position, motion, fuel, route, and UTC data.
 - Confirm Street and Topo basemaps are visibly different from the EFB background.
 - Confirm online tiles become cached and remain visible after disconnecting.
-- Exercise every overlay and zoom from 320 NM down to 0.02 NM at an airport.
+- Exercise every overlay and zoom from 320 NM down to 0.005 NM at an airport.
+- Confirm airport, waypoint, weather, and airspace labels remain readable over
+  both Street and Topo tiles.
+- Confirm circular range rings are absent and the live position is a clearly
+  recognizable mini-airplane oriented to aircraft heading.
+- Confirm map controls have compact deep-navy fills, crisp borders, white shadowed
+  labels, and a brighter solid high-contrast hover treatment.
+- Confirm the +, -, DEP, ARR, and HOME controls zoom or center the map correctly.
 - Drag the map, zoom around an off-center pointer, and confirm HOME returns to the aircraft.
-- Hover Food, Golf, and Sights icons and confirm the opaque card identifies each category.
+- Toggle POI off and on, then hover Food, Golf, and Sights icons and confirm the
+  opaque card identifies each category with clear proportional typography.
+- Click an airport or place and confirm its compact light card remains readable
+  without unnecessarily obscuring the map.
+- Click an arbitrary map point and confirm the response card, notification,
+  selected marker label, and both action buttons have fully solid backgrounds.
+- Open Map Filters and toggle aircraft, aircraft information, flight plan, map
+  labels, weather, airports, navaids, airspace, and points of interest.
+- Confirm the top map toolbar contains only Filter, Street, and Topo; WX, APT,
+  NAV, AIR, and POI must appear only inside Map Filters.
+- Confirm charcoal surfaces, green selected actions, cyan information, yellow
+  hover borders, filled buttons, and proportional text are consistent on every page.
+- Confirm map clicks create a distinct dimmed overlay and fully opaque modal;
+  Center, Airport Details, and Add FMS must operate independently.
+- At a dense airport region, zoom from 40 NM inward and confirm labels are
+  progressively revealed without overlapping into an unreadable cluster.
+- Confirm every normal button and map control has a fully opaque dark or green
+  fill with no thin outline-only state; hover must brighten the complete button.
 - Select a place or arbitrary map point, approve Add to FMS, and confirm it is
   inserted after the active leg without deleting the remaining route.
 

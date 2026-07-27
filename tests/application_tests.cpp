@@ -452,6 +452,15 @@ int main() {
     moving_map.toggle_layer(openefb::MapLayer::airspace);
     require(moving_map.layer_enabled(openefb::MapLayer::airspace),
             "airspace overlay can be enabled independently");
+    require(moving_map.poi_enabled(), "points of interest are visible by default");
+    moving_map.toggle_pois();
+    require(!moving_map.poi_enabled() &&
+                !moving_map.layer_enabled(openefb::MapLayer::food) &&
+                !moving_map.layer_enabled(openefb::MapLayer::golf) &&
+                !moving_map.layer_enabled(openefb::MapLayer::attractions),
+            "one POI switch hides every place category");
+    moving_map.toggle_pois();
+    require(moving_map.poi_enabled(), "one POI switch restores every place category");
     require(moving_map.range_nm() == 40.0, "moving map starts at a useful regional range");
     require(moving_map.zoom_in() && moving_map.range_nm() == 20.0,
             "moving map can zoom in");
@@ -469,8 +478,8 @@ int main() {
                 std::abs(moving_map.center_latitude_degrees() - 47.449) < 0.001,
             "map recenter returns to the live aircraft");
     while (moving_map.zoom_in()) {}
-    require(moving_map.range_nm() == 0.02,
-            "airport surface zoom reaches approximately a 120-foot map radius");
+    require(moving_map.range_nm() == 0.005,
+            "airport surface zoom reaches approximately a 30-foot map radius");
     const auto same_position = moving_map.project(47.449, -122.309, 47.449, -122.309);
     require(same_position.valid && std::abs(same_position.east_nm) < 0.001 &&
                 std::abs(same_position.north_nm) < 0.001,
