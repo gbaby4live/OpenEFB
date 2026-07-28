@@ -66,6 +66,11 @@ int text_clip_bottom{-100000};
 
 std::string shortened(std::string_view value, std::size_t maximum);
 
+std::string traffic_key(const TrafficTarget& target) {
+    if (target.mode_s_id != 0) return "HEX:" + std::to_string(target.mode_s_id);
+    return "CALL:" + target.callsign;
+}
+
 bool compact_layout(int left, int right) {
     return right - left < compact_width_threshold;
 }
@@ -685,13 +690,10 @@ struct ScreenPoint {
     double y{};
 };
 
-ScreenPoint map_screen_point(const MovingMapModel& map,
-                             double latitude, double longitude, int center_x, int center_y,
-                             double pixels_per_nm) {
-    const auto offset = map.project(map.center_latitude_degrees(), map.center_longitude_degrees(),
-                                    latitude, longitude);
-    return {offset.valid, center_x + offset.east_nm * pixels_per_nm,
-            center_y + offset.north_nm * pixels_per_nm};
+ScreenPoint map_screen_point(const MovingMapModel& map, const MapTileViewport& viewport,
+                             double latitude, double longitude) {
+    const auto point = project_map_coordinate(map.style(), viewport, latitude, longitude);
+    return {point.valid, point.x, point.y};
 }
 
 void draw_aircraft_symbol(int center_x, int center_y, double heading_degrees) {
@@ -793,8 +795,8 @@ Color airspace_color(std::string_view class_code) {
 }
 
 void draw_airspace_overlay(const AirspaceSnapshot& airspace, const MovingMapModel& map,
-                           int center_x, int center_y,
-                           double pixels_per_nm, int left, int top, int right, int bottom) {
+                           const MapTileViewport& viewport,
+                           int left, int top, int right, int bottom) {
     if (airspace.state != AirspaceLoadState::ready || !airspace.zones) return;
     std::size_t rendered_zones = 0;
     std::size_t rendered_segments = 0;
@@ -805,10 +807,10 @@ void draw_airspace_overlay(const AirspaceSnapshot& airspace, const MovingMapMode
         for (std::size_t index = 1; index <= zone.boundary.size(); ++index) {
             const auto& first = zone.boundary[index - 1];
             const auto& second = zone.boundary[index % zone.boundary.size()];
-            auto point_1 = map_screen_point(map, first.latitude_degrees,
-                                            first.longitude_degrees, center_x, center_y, pixels_per_nm);
-            auto point_2 = map_screen_point(map, second.latitude_degrees,
-                                            second.longitude_degrees, center_x, center_y, pixels_per_nm);
+            auto point_1 = map_screen_point(map, viewport, first.latitude_degrees,
+                                            first.longitude_degrees);
+            auto point_2 = map_screen_point(map, viewport, second.latitude_degrees,
+                                            second.longitude_degrees);
             if (!point_1.valid || !point_2.valid) continue;
             double x_1 = point_1.x, y_1 = point_1.y, x_2 = point_2.x, y_2 = point_2.y;
             if (clip_line(x_1, y_1, x_2, y_2, left, top, right, bottom)) {
@@ -853,6 +855,7 @@ enum class MarkerIconKind : std::size_t {
     food,
     golf,
     landmark,
+    traffic,
     count,
 };
 
@@ -894,7 +897,7 @@ private:
         if (loaded_) return;
         const std::array<std::array<std::uint8_t, 3>, static_cast<std::size_t>(MarkerIconKind::count)> colors{{
             {35, 225, 255}, {70, 235, 190}, {255, 206, 55}, {226, 95, 255},
-            {255, 145, 48}, {80, 225, 110}, {196, 95, 255},
+            {255, 145, 48}, {80, 225, 110}, {196, 95, 255}, {255, 205, 45},
         }};
         for (std::size_t index = 0; index < images_.size(); ++index) {
             auto pixels = make_icon(static_cast<MarkerIconKind>(index), colors[index]);
@@ -959,6 +962,11 @@ private:
             for (int y = 5; y <= 10; ++y) {
                 for (int x = 9; x <= 15 - (y - 5); ++x) set(x, y, white);
             }
+        } else if (kind == MarkerIconKind::traffic) {
+            for (int y = 4; y <= 18; ++y) { set(11, y, white); set(12, y, white); }
+            for (int x = 5; x <= 18; ++x) { set(x, 10, white); set(x, 11, white); }
+            for (int x = 8; x <= 15; ++x) set(x, 17, white);
+            set(10, 4, white); set(13, 4, white);
         } else {
             for (int value = 0; value <= 7; ++value) {
                 set(11 - value, 11, white); set(11 + value, 11, white);
@@ -1011,12 +1019,22 @@ struct MapFilterGeometry {
     int right{};
     int bottom{};
     int first_row_top{};
+    int visible_slots{};
+    int max_scroll{};
 };
 
-MapFilterGeometry map_filter_geometry(int map_left, int map_top, int map_right) {
+MapFilterGeometry map_filter_geometry(int map_left, int map_top, int map_right, int map_bottom) {
+    constexpr int content_slots = 11;
+    constexpr int step = 25;
     const int right = map_right - 58;
     const int left = std::max(map_left + 10, right - 214);
-    return {left, map_top - 10, right, map_top - 306, map_top - 48};
+    const int top = map_top - 10;
+    const int bottom = std::max(map_bottom + 8, map_top - 331);
+    const int first_row_top = map_top - 48;
+    const int visible_slots = std::max(
+        1, std::min(content_slots, (first_row_top - bottom + 8) / step));
+    return {left, top, right, bottom, first_row_top, visible_slots,
+            std::max(0, content_slots - visible_slots)};
 }
 
 void draw_filter_row(int left, int top, int right, std::string_view label, bool enabled) {
@@ -1035,16 +1053,21 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
                    const RouteProgressSnapshot& progress,
                    const WeatherSnapshot& weather, const AirspaceSnapshot& airspace,
                    const NavigationDatabaseSnapshot& navigation_database,
+                   const TrafficSnapshot& traffic,
                    const MovingMapModel& map, XPlaneMapTiles& tiles, XPlaneMapPois& pois,
                    std::vector<MapHitTarget>& hit_targets,
                    std::vector<PoiHitTarget>& poi_hit_targets,
+                   std::vector<TrafficHitTarget>& traffic_hit_targets,
                    const std::optional<MapPoi>& hovered_poi,
                    const std::optional<MapHitTarget>& hovered_target,
-                   bool filters_open, bool show_aircraft, bool show_aircraft_info,
+                   const std::optional<std::string>& selected_traffic_key,
+                   bool filters_open, int filter_scroll,
+                   bool show_aircraft, bool show_aircraft_info,
                    bool show_route, bool show_labels, int marker_scale,
                    int left, int top, int right, int bottom) {
     hit_targets.clear();
     poi_hit_targets.clear();
+    traffic_hit_targets.clear();
     const auto panel = home_map_geometry(left, top, right, bottom);
     const int map_left = panel.left + 3;
     const int map_right = panel.right - 3;
@@ -1075,18 +1098,15 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
         return;
     }
 
-    tiles.draw(map.style(), {map_left, map_top, map_right, map_bottom,
-                             map.center_latitude_degrees(), map.center_longitude_degrees(),
-                             map.range_nm()});
+    const MapTileViewport viewport{
+        map_left, map_top, map_right, map_bottom,
+        map.center_latitude_degrees(), map.center_longitude_degrees(), map.range_nm()};
+    tiles.draw(map.style(), viewport);
     if (map.poi_enabled()) {
         pois.update(map.center_latitude_degrees(), map.center_longitude_degrees(), map.range_nm());
     }
-    const int center_x = (map_left + map_right) / 2;
-    const int center_y = (map_top + map_bottom) / 2;
-    const double radius_pixels = std::max(40.0, std::min(map_right - map_left, map_top - map_bottom) * 0.46);
-    const double pixels_per_nm = radius_pixels / map.range_nm();
     if (map.layer_enabled(MapLayer::airspace)) {
-        draw_airspace_overlay(airspace, map, center_x, center_y, pixels_per_nm,
+        draw_airspace_overlay(airspace, map, viewport,
                               map_left, map_top, map_right, map_bottom);
     }
 
@@ -1105,9 +1125,8 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
             if (std::abs(nav.latitude_degrees - map.center_latitude_degrees()) > latitude_margin ||
                 std::abs(std::remainder(nav.longitude_degrees - map.center_longitude_degrees(),
                                         360.0)) > longitude_margin) continue;
-            const auto point = map_screen_point(map, nav.latitude_degrees,
-                                                nav.longitude_degrees, center_x, center_y,
-                                                pixels_per_nm);
+            const auto point = map_screen_point(map, viewport, nav.latitude_degrees,
+                                                nav.longitude_degrees);
             if (!point.valid || point.x < map_left + 10 || point.x > map_right - 10 ||
                 point.y < map_bottom + 60 || point.y > map_top - 10) continue;
             const int marker_x = static_cast<int>(point.x);
@@ -1149,8 +1168,8 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
     const auto visible_pois = map.range_nm() <= 40.0 ? pois.snapshot() : std::vector<MapPoi>{};
     for (const auto& poi : visible_pois) {
         if (!map.poi_enabled()) continue;
-        const auto point = map_screen_point(map, poi.latitude_degrees, poi.longitude_degrees,
-                                            center_x, center_y, pixels_per_nm);
+        const auto point = map_screen_point(map, viewport, poi.latitude_degrees,
+                                            poi.longitude_degrees);
         if (!point.valid || point.x < map_left + 10 || point.x > map_right - 10 ||
             point.y < map_bottom + 62 || point.y > map_top - 10) continue;
         const int marker_x = static_cast<int>(point.x);
@@ -1172,9 +1191,8 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
     if (show_route) {
         route_points.reserve(flight_plan.legs.size());
         for (const auto& leg : flight_plan.legs) {
-            route_points.push_back(map_screen_point(map, leg.latitude_degrees,
-                                                    leg.longitude_degrees, center_x, center_y,
-                                                    pixels_per_nm));
+            route_points.push_back(map_screen_point(map, viewport, leg.latitude_degrees,
+                                                    leg.longitude_degrees));
         }
     }
     for (std::size_t index = 1; index < route_points.size(); ++index) {
@@ -1186,8 +1204,11 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
         double x_2 = route_points[index].x;
         double y_2 = route_points[index].y;
         if (clip_line(x_1, y_1, x_2, y_2, map_left, map_top, map_right, map_bottom)) {
+            draw_line(x_1, y_1, x_2, y_2,
+                      Color{0.08F, 0.02F, 0.07F, 0.96F},
+                      flight_plan.legs[index].active ? 8.0F : 6.5F);
             draw_line(x_1, y_1, x_2, y_2, route_line,
-                      flight_plan.legs[index].active ? 4.0F : 2.5F);
+                      flight_plan.legs[index].active ? 5.0F : 4.0F);
         }
     }
 
@@ -1250,9 +1271,52 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
         }
     }
 
+    if (map.layer_enabled(MapLayer::traffic) && traffic.available && map.range_nm() <= 160.0) {
+        std::size_t rendered_traffic{};
+        for (const auto& target : traffic.targets) {
+            const auto point = map_screen_point(map, viewport, target.latitude_degrees,
+                                                target.longitude_degrees);
+            if (!point.valid || point.x < map_left + 18 || point.x > map_right - 18 ||
+                point.y < map_bottom + 62 || point.y > map_top - 18) continue;
+            const int traffic_x = static_cast<int>(point.x);
+            const int traffic_y = static_cast<int>(point.y);
+            draw_marker_icon(traffic_x, traffic_y, MarkerIconKind::traffic, marker_scale);
+            traffic_hit_targets.push_back(
+                {traffic_x, traffic_y, traffic_key(target), target.callsign});
+            const double radians = target.track_degrees * 3.14159265358979323846 / 180.0;
+            draw_line(traffic_x, traffic_y,
+                      traffic_x + std::sin(radians) * 18.0,
+                      traffic_y + std::cos(radians) * 18.0,
+                      Color{1.0F, 0.82F, 0.18F, 1.0F}, 2.0F);
+            const bool label_crowded = std::any_of(
+                occupied_label_positions.begin(), occupied_label_positions.end(),
+                [traffic_x, traffic_y](const auto& placed) {
+                    return std::abs(traffic_x - placed.first) < 92 &&
+                           std::abs(traffic_y - placed.second) < 24;
+                });
+            if (show_labels && !label_crowded && traffic_x < map_right - 90) {
+                char traffic_label[80]{};
+                if (target.on_ground) {
+                    std::snprintf(traffic_label, sizeof(traffic_label), "%s  GND",
+                                  target.callsign.c_str());
+                } else {
+                    const int relative_hundreds = static_cast<int>(std::lround(
+                        (target.altitude_feet - telemetry.altitude_feet) / 100.0));
+                    const char trend = target.vertical_speed_fpm > 300.0 ? '^' :
+                                       target.vertical_speed_fpm < -300.0 ? 'v' : '-';
+                    std::snprintf(traffic_label, sizeof(traffic_label), "%s  %+d%c",
+                                  target.callsign.c_str(), relative_hundreds, trend);
+                }
+                draw_map_label(traffic_x + 12, traffic_y + 6, traffic_label,
+                               Color{1.0F, 0.82F, 0.18F, 1.0F});
+                occupied_label_positions.emplace_back(traffic_x, traffic_y);
+            }
+            if (++rendered_traffic >= 48) break;
+        }
+    }
+
     const auto aircraft_point = map_screen_point(
-        map, telemetry.latitude_degrees, telemetry.longitude_degrees,
-        center_x, center_y, pixels_per_nm);
+        map, viewport, telemetry.latitude_degrees, telemetry.longitude_degrees);
     if (show_aircraft && aircraft_point.valid && aircraft_point.x >= map_left + 12 &&
         aircraft_point.x <= map_right - 12 && aircraft_point.y >= map_bottom + 62 &&
         aircraft_point.y <= map_top - 12) {
@@ -1269,13 +1333,16 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
         draw_shadowed_text(map_left + 22, map_bottom + 36,
                            map_progress_text(progress), text_primary);
     }
-    const std::string attribution = map.style() == MapStyle::street
+    std::string attribution = map.style() == MapStyle::street
         ? "(c) OpenStreetMap contributors"
         : "Map data (c) OpenStreetMap contributors, SRTM  |  Map style (c) OpenTopoMap (CC-BY-SA)";
+    if (traffic.source == TrafficSource::online || traffic.source == TrafficSource::blended) {
+        attribution += "  |  Traffic (c) adsb.lol (ODbL)";
+    }
     draw_rectangle(map_left, map_bottom + 22, map_right, map_bottom, status_bar);
     draw_line(map_left, map_bottom + 22, map_right, map_bottom + 22,
               Color{0.24F, 0.62F, 0.72F, 1.0F});
-    draw_shadowed_text(map_left + 8, map_bottom + 6, attribution, text_muted);
+    draw_shadowed_text(map_left + 8, map_bottom + 6, shortened(attribution, 104), text_muted);
 
     const int recenter_right = map_right - 10;
     const int recenter_left = recenter_right - 42;
@@ -1310,10 +1377,70 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
         draw_shadowed_text(info_left + 10, info_top - 17, live_info, text_primary);
     }
 
+    const TrafficTarget* selected_traffic = nullptr;
+    if (selected_traffic_key) {
+        const auto selected = std::ranges::find_if(traffic.targets, [&](const auto& target) {
+            return traffic_key(target) == *selected_traffic_key;
+        });
+        if (selected != traffic.targets.end()) selected_traffic = &*selected;
+    }
+    if (selected_traffic) {
+        const int detail_left = map_left + 12;
+        const int detail_top = map_top - (show_aircraft_info ? 42 : 12);
+        const int detail_right = std::min(map_right - 62, detail_left + 330);
+        const int detail_bottom = detail_top - 104;
+        const std::size_t detail_characters = static_cast<std::size_t>(
+            std::max(18, (detail_right - detail_left - 24) / 7));
+        const Color traffic_color{1.0F, 0.82F, 0.18F, 1.0F};
+        draw_rectangle(detail_left - 3, detail_top + 3, detail_right + 3,
+                       detail_bottom - 3, Color{0.015F, 0.018F, 0.020F, 1.0F});
+        draw_rectangle(detail_left, detail_top, detail_right, detail_bottom,
+                       Color{0.075F, 0.095F, 0.110F, 1.0F});
+        draw_border(detail_left, detail_top, detail_right, detail_bottom, traffic_color, 2.0F);
+        draw_tactical_corners(detail_left, detail_top, detail_right, detail_bottom,
+                              text_primary, 8);
+        const std::string title = selected_traffic->callsign.empty()
+            ? "TRAFFIC" : selected_traffic->callsign;
+        const std::string registration = selected_traffic->registration.empty()
+            ? "REG NOT PUBLISHED" : selected_traffic->registration;
+        const std::string aircraft = !selected_traffic->aircraft_name.empty()
+            ? selected_traffic->aircraft_name
+            : (!selected_traffic->aircraft_type.empty()
+                   ? selected_traffic->aircraft_type : "TYPE NOT PUBLISHED");
+        char performance[96]{};
+        std::snprintf(performance, sizeof(performance), "ALT %.0f FT   SPEED %.0f KT",
+                      selected_traffic->altitude_feet,
+                      selected_traffic->ground_speed_knots);
+        std::string route = "ROUTE LOOKUP...";
+        if (selected_traffic->route_lookup_complete) {
+            route = selected_traffic->departure_airport.empty() ||
+                    selected_traffic->destination_airport.empty()
+                ? (selected_traffic->route_lookup_status.empty()
+                       ? "DEP / DEST NOT PUBLISHED"
+                       : selected_traffic->route_lookup_status)
+                : "ROUTE  " + selected_traffic->departure_airport + " > " +
+                      selected_traffic->destination_airport;
+        }
+        draw_shadowed_text(detail_left + 12, detail_top - 20,
+                           shortened(title + "  /  " + registration, detail_characters),
+                           traffic_color);
+        draw_shadowed_text(detail_left + 12, detail_top - 42,
+                           shortened("AIRCRAFT  " + aircraft, detail_characters), text_primary);
+        draw_shadowed_text(detail_left + 12, detail_top - 64,
+                           shortened(performance, detail_characters), text_primary);
+        draw_shadowed_text(detail_left + 12, detail_top - 86,
+                           shortened(route, detail_characters), connected);
+        draw_text(detail_left + 12, detail_top - 99,
+                  shortened("Click aircraft again to close  |  Route data: CC0",
+                            detail_characters),
+                  text_muted);
+    }
+
     if (hovered_poi || hovered_target) {
         const int tooltip_width = std::min(290, map_right - map_left - 90);
         const int tooltip_left = map_left + 12;
-        const int tooltip_top = map_top - (show_aircraft_info ? 42 : 12);
+        const int tooltip_top = map_top - (show_aircraft_info ? 42 : 12) -
+                                (selected_traffic ? 112 : 0);
         const int tooltip_right = tooltip_left + tooltip_width;
         const int tooltip_bottom = tooltip_top - 56;
         const Color tooltip_accent = hovered_poi
@@ -1336,7 +1463,7 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
     }
 
     if (filters_open) {
-        const auto filters = map_filter_geometry(map_left, map_top, map_right);
+        const auto filters = map_filter_geometry(map_left, map_top, map_right, map_bottom);
         draw_rectangle(filters.left - 4, filters.top + 4, filters.right + 4,
                        filters.bottom - 4, Color{0.015F, 0.018F, 0.020F, 1.0F});
         draw_rectangle(filters.left, filters.top, filters.right, filters.bottom,
@@ -1347,36 +1474,55 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
         draw_shadowed_text(filters.left + 12, filters.top - 24, "MAP FILTERS", text_primary,
                            xplmFont_Proportional);
         constexpr int step = 25;
-        int row_top = filters.first_row_top;
-        draw_filter_row(filters.left + 8, row_top, filters.right - 8, "Aircraft", show_aircraft);
-        row_top -= step;
-        draw_filter_row(filters.left + 8, row_top, filters.right - 8, "Aircraft information",
-                        show_aircraft_info);
-        row_top -= step;
-        draw_filter_row(filters.left + 8, row_top, filters.right - 8, "Flight plan", show_route);
-        row_top -= step;
-        draw_filter_row(filters.left + 8, row_top, filters.right - 8, "Map labels", show_labels);
-        row_top -= step;
-        draw_filter_row(filters.left + 8, row_top, filters.right - 8, "Weather",
-                        map.layer_enabled(MapLayer::weather));
-        row_top -= step;
-        draw_filter_row(filters.left + 8, row_top, filters.right - 8, "Airports",
-                        map.layer_enabled(MapLayer::airports));
-        row_top -= step;
-        draw_filter_row(filters.left + 8, row_top, filters.right - 8, "Navaids",
-                        map.layer_enabled(MapLayer::navaids));
-        row_top -= step;
-        draw_filter_row(filters.left + 8, row_top, filters.right - 8, "Airspace",
-                        map.layer_enabled(MapLayer::airspace));
-        row_top -= step;
-        draw_filter_row(filters.left + 8, row_top, filters.right - 8, "Points of interest",
-                        map.poi_enabled());
-        row_top -= step;
-        draw_rectangle(filters.left + 8, row_top, filters.right - 8, row_top - 24, card);
-        draw_text(filters.left + 16, row_top - 17,
-                  "ICON SIZE  " + std::to_string(marker_scale) + "%", text_primary);
-        draw_button(filters.right - 68, row_top - 1, filters.right - 42, row_top - 23, "-");
-        draw_button(filters.right - 38, row_top - 1, filters.right - 12, row_top - 23, "+");
+        const int effective_scroll = std::clamp(filter_scroll, 0, filters.max_scroll);
+        const auto visible_row = [&filters](int row_top) {
+            return row_top <= filters.first_row_top + 1 &&
+                   row_top - 22 >= filters.bottom + 6;
+        };
+        const auto draw_row = [&](int index, std::string_view label, bool enabled) {
+            const int row_top = filters.first_row_top + effective_scroll * step - index * step;
+            if (visible_row(row_top)) {
+                draw_filter_row(filters.left + 8, row_top, filters.right - 8, label, enabled);
+            }
+        };
+        draw_row(0, "Aircraft", show_aircraft);
+        draw_row(1, "Aircraft information", show_aircraft_info);
+        draw_row(2, "Flight plan", show_route);
+        draw_row(3, "Map labels", show_labels);
+        draw_row(4, "Weather", map.layer_enabled(MapLayer::weather));
+        draw_row(5, "Airports", map.layer_enabled(MapLayer::airports));
+        draw_row(6, "Navaids", map.layer_enabled(MapLayer::navaids));
+        draw_row(7, "Airspace", map.layer_enabled(MapLayer::airspace));
+        const std::string traffic_source = traffic.source == TrafficSource::online ? "ONLINE" :
+            traffic.source == TrafficSource::blended ? "ONLINE+TCAS" :
+            traffic.source == TrafficSource::simulator ? "TCAS" : "WAIT";
+        const std::string traffic_label = "Traffic  " +
+            std::to_string(traffic.targets.size()) + " / " + traffic_source;
+        draw_row(8, traffic_label, map.layer_enabled(MapLayer::traffic));
+        draw_row(9, "Points of interest", map.poi_enabled());
+        const int size_top = filters.first_row_top + effective_scroll * step - 10 * step;
+        if (visible_row(size_top)) {
+            draw_rectangle(filters.left + 8, size_top, filters.right - 8, size_top - 24, card);
+            draw_text(filters.left + 16, size_top - 17,
+                      "ICON SIZE  " + std::to_string(marker_scale) + "%", text_primary);
+            draw_button(filters.right - 68, size_top - 1,
+                        filters.right - 42, size_top - 23, "-");
+            draw_button(filters.right - 38, size_top - 1,
+                        filters.right - 12, size_top - 23, "+");
+        }
+        if (filters.max_scroll > 0) {
+            const int track_top = filters.top - 38;
+            const int track_bottom = filters.bottom + 8;
+            const int thumb_height = std::max(
+                22, (track_top - track_bottom) * filters.visible_slots / 11);
+            const int travel = std::max(0, track_top - track_bottom - thumb_height);
+            const int thumb_top = track_top -
+                (filters.max_scroll == 0 ? 0 : travel * effective_scroll / filters.max_scroll);
+            draw_rectangle(filters.right - 4, track_top,
+                           filters.right - 1, track_bottom, Color{0.05F, 0.06F, 0.065F, 1.0F});
+            draw_rectangle(filters.right - 5, thumb_top,
+                           filters.right, thumb_top - thumb_height, accent);
+        }
     }
 
 }
@@ -1748,7 +1894,7 @@ std::string log_time(int seconds) {
 void draw_logbook_page(const FlightLogSnapshot& log, int left, int top, int right) {
     const int card_right = responsive_card_right(left, right, 420);
     draw_text(left, top, "Flight Logbook", text_primary, xplmFont_Proportional);
-    draw_text(left, top - 28, "Automatic takeoff, landing, distance, altitude, and landing-rate records", text_muted);
+    draw_text(left, top - 28, "Persistent takeoff, landing, route-track, altitude, and landing-rate records", text_muted);
     draw_card(left, top - 62, card_right, top - 158, log.airborne ? "CURRENT FLIGHT - AIRBORNE" : "CURRENT FLIGHT - ON GROUND",
               log.departure + "  to  " + log.destination);
     char details[180]{};
@@ -1768,8 +1914,9 @@ void draw_logbook_page(const FlightLogSnapshot& log, int left, int top, int righ
         draw_rectangle(left, row_top, card_right, row_top - 42,
                        index % 2 == 0 ? card : Color{0.145F, 0.155F, 0.160F, 1.0F});
         char row[220]{};
-        std::snprintf(row, sizeof(row), "%s  %s-%s  |  %s  |  %.1f NM  |  landing %.0f fpm",
-                      entry.aircraft_name.c_str(), entry.departure.c_str(), entry.destination.c_str(),
+        std::snprintf(row, sizeof(row), "%s  |  %s  %s-%s  |  %s  |  %.1f NM  |  landing %.0f fpm",
+                      entry.completed_utc.c_str(), entry.aircraft_name.c_str(),
+                      entry.departure.c_str(), entry.destination.c_str(),
                       log_time(entry.airborne_seconds).c_str(), entry.distance_nm,
                       entry.landing_vertical_speed_fpm);
         draw_text(left + 14, row_top - 27, shortened(row, 96), text_primary);
@@ -1790,13 +1937,17 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                        const FlightLogSnapshot& flight_log,
                        const AirspaceSnapshot& airspace,
                        const NavigationDatabaseSnapshot& navigation_database,
+                       const TrafficSnapshot& traffic,
                        const MovingMapModel& moving_map,
                        XPlaneMapTiles& map_tiles, XPlaneMapPois& map_pois,
                        std::vector<MapHitTarget>& map_hit_targets,
                        std::vector<PoiHitTarget>& poi_hit_targets,
+                       std::vector<TrafficHitTarget>& traffic_hit_targets,
                        const std::optional<MapPoi>& hovered_map_poi,
                        const std::optional<MapHitTarget>& hovered_map_target,
-                       bool map_filters_open, bool show_map_aircraft,
+                       const std::optional<std::string>& selected_traffic_key,
+                       bool map_filters_open, int map_filter_scroll,
+                       bool show_map_aircraft,
                        bool show_map_aircraft_info, bool show_map_route,
                        bool show_map_labels, int map_marker_scale,
                        const DisplayPreferences& display_preferences,
@@ -1805,9 +1956,11 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
     switch (page) {
     case EfbPage::home:
         draw_home_map(telemetry, flight_plan, route_progress, weather, airspace,
-                      navigation_database, moving_map, map_tiles, map_pois, map_hit_targets,
-                      poi_hit_targets, hovered_map_poi, hovered_map_target,
-                      map_filters_open, show_map_aircraft, show_map_aircraft_info,
+                      navigation_database, traffic, moving_map, map_tiles, map_pois, map_hit_targets,
+                      poi_hit_targets, traffic_hit_targets, hovered_map_poi, hovered_map_target,
+                      selected_traffic_key,
+                      map_filters_open, map_filter_scroll,
+                      show_map_aircraft, show_map_aircraft_info,
                       show_map_route, show_map_labels, map_marker_scale,
                       left, top, right, bottom);
         break;
@@ -1836,9 +1989,12 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         break;
     case EfbPage::settings:
         draw_text(left, top, "Settings", text_primary, xplmFont_Proportional);
-        draw_text(left, top - 28, "Saved display and accessibility preferences.", text_muted);
+        draw_text(left, top - 28, "Saved simulator, display, and accessibility preferences.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Window geometry", "Position and size save automatically");
+                  "Inject online traffic into X-Plane TCAS",
+                  shortened(traffic.injection_status, 56));
+        draw_button(card_right - 122, top - 91, card_right - 18, top - 124,
+                    display_preferences.inject_traffic ? "Disable" : "Enable", true);
         draw_card(left, top - 178, card_right, top - 274, "High contrast text",
                   display_preferences.high_contrast ? "Enabled - maximum text visibility" :
                                                        "Disabled - standard cockpit palette");
@@ -1849,14 +2005,15 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                                                      "Disabled - 900 x 640 minimum");
         draw_button(card_right - 122, top - 323, card_right - 18, top - 356,
                     display_preferences.comfort_size ? "Compact" : "Enlarge", true);
+        draw_text(left, top - 422, "Window position and size save automatically.", text_muted);
         break;
     case EfbPage::about:
         draw_text(left, top, "About OpenEFB", text_primary, xplmFont_Proportional);
         draw_text(left, top - 28, "An open-source electronic flight bag for X-Plane 12.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Version", "OPEN EFB / 1.0 RC20");
+                  "Version", "OPEN EFB / 1.0 RC25");
         draw_card(left, top - 178, card_right, top - 274,
-                  "Release", "Full-height white map canvas, compact interface, and image markers");
+                  "Release", "Online ADS-B map traffic with optional X-Plane TCAS injection");
         draw_card(left, top - 294, card_right, top - 390,
                   "Project", "Built in the open for the flight-sim community");
         break;
@@ -1881,6 +2038,7 @@ std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, Telemetry
                                                     RouteProgressModel& route_progress_model,
                                                     WeatherModel& weather_model,
                                                     FlightLogModel& flight_log_model,
+                                                    TrafficModel& traffic_model,
                                                     XPlanePreferences& preferences) {
     auto window = std::unique_ptr<XPlaneWindow>(
         new XPlaneWindow(ui_model, telemetry_model, flight_plan_model, flight_plan_editor,
@@ -1889,7 +2047,7 @@ std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, Telemetry
                          fuel_model, planning_model, briefing_model, briefing_library,
                          moving_map_model, navigation_database_model,
                          route_progress_model,
-                         weather_model, flight_log_model, preferences));
+                         weather_model, flight_log_model, traffic_model, preferences));
     if (!window->window_id_) {
         return nullptr;
     }
@@ -1912,6 +2070,7 @@ XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
                            RouteProgressModel& route_progress_model,
                            WeatherModel& weather_model,
                            FlightLogModel& flight_log_model,
+                           TrafficModel& traffic_model,
                            XPlanePreferences& preferences)
     : ui_model_(ui_model), telemetry_model_(telemetry_model),
       flight_plan_model_(flight_plan_model), flight_plan_editor_(flight_plan_editor),
@@ -1924,8 +2083,10 @@ XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
       route_progress_model_(route_progress_model),
       weather_model_(weather_model),
       flight_log_model_(flight_log_model),
+      traffic_model_(traffic_model),
       preferences_(preferences), map_tiles_(preferences.map_cache_directory()) {
     display_preferences_ = preferences_.load_display_preferences();
+    traffic_model_.set_injection_requested(display_preferences_.inject_traffic);
     high_contrast_mode = display_preferences_.high_contrast;
     WindowGeometry geometry;
     if (const auto stored = preferences_.load_geometry()) {
@@ -2078,9 +2239,12 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
                       planning_model_.snapshot(), briefing_model_,
                       route_progress_model_.snapshot(),
                       weather_model_.snapshot(), flight_log_model_.snapshot(), airspace_model_.snapshot(),
-                      navigation_database_model_.snapshot(), moving_map_model_, map_tiles_, map_pois_,
-                      map_hit_targets_, poi_hit_targets_, hovered_map_poi_, hovered_map_target_,
-                      map_filters_open_, show_map_aircraft_, show_map_aircraft_info_,
+                      navigation_database_model_.snapshot(), traffic_model_.snapshot(),
+                      moving_map_model_, map_tiles_, map_pois_,
+                      map_hit_targets_, poi_hit_targets_, traffic_hit_targets_,
+                      hovered_map_poi_, hovered_map_target_, selected_traffic_key_,
+                      map_filters_open_, map_filter_scroll_,
+                      show_map_aircraft_, show_map_aircraft_info_,
                       show_map_route_, show_map_labels_, map_marker_scale_,
                       display_preferences_,
                       content_left, content_top, right, bottom);
@@ -2118,18 +2282,18 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
         const int map_right = panel.right - 3;
         const int map_top = panel.tile_top;
         const int map_bottom = panel.bottom + 3;
-        const int map_center_x = (map_left + map_right) / 2;
-        const int map_center_y = (map_top + map_bottom) / 2;
-        const double radius_pixels = std::max(
-            40.0, std::min(map_right - map_left, map_top - map_bottom) * 0.46);
+        const MapTileViewport viewport{
+            map_left, map_top, map_right, map_bottom,
+            moving_map_model_.center_latitude_degrees(),
+            moving_map_model_.center_longitude_degrees(),
+            moving_map_model_.range_nm()};
         // A distinct modal layer separates map actions from the base map and
         // page shell. The scrim is intentionally bounded to the map viewport.
         draw_rectangle(map_left, map_top, map_right, map_bottom,
                        Color{0.0F, 0.0F, 0.0F, 0.52F});
         const auto selected_point = map_screen_point(
-            moving_map_model_, pending_map_navigation_->leg.latitude_degrees,
-            pending_map_navigation_->leg.longitude_degrees, map_center_x, map_center_y,
-            radius_pixels / moving_map_model_.range_nm());
+            moving_map_model_, viewport, pending_map_navigation_->leg.latitude_degrees,
+            pending_map_navigation_->leg.longitude_degrees);
         if (selected_point.valid && selected_point.x >= map_left + 12 &&
             selected_point.x <= map_right - 12 && selected_point.y >= map_bottom + 12 &&
             selected_point.y <= map_top - 12) {
@@ -2322,6 +2486,12 @@ void XPlaneWindow::toggle_comfort_size() {
                           std::min(bottom, top - 700));
 }
 
+void XPlaneWindow::toggle_traffic_injection() {
+    display_preferences_.inject_traffic = !display_preferences_.inject_traffic;
+    traffic_model_.set_injection_requested(display_preferences_.inject_traffic);
+    preferences_.save_display_preferences(display_preferences_);
+}
+
 void XPlaneWindow::resize_interface(double factor) {
     if (!window_id_ || factor <= 0.0) return;
     int left{}, top{}, right{}, bottom{};
@@ -2443,18 +2613,21 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
             const int map_right = panel.right - 3;
             const int map_top = panel.tile_top;
             const int map_bottom = panel.bottom + 3;
-            const double radius_pixels = std::max(
-                40.0, std::min(map_right - map_left, map_top - map_bottom) * 0.46);
-            const double pixels_per_nm = radius_pixels / window->moving_map_model_.range_nm();
+            const int center_x = (map_left + map_right) / 2;
+            const int center_y = (map_top + map_bottom) / 2;
+            const MapTileViewport drag_viewport{
+                map_left, map_top, map_right, map_bottom,
+                window->map_drag_start_latitude_, window->map_drag_start_longitude_,
+                window->moving_map_model_.range_nm()};
             const int delta_x = x - window->map_drag_start_x_;
             const int delta_y = y - window->map_drag_start_y_;
             if (std::abs(delta_x) > 3 || std::abs(delta_y) > 3) {
                 window->map_drag_moved_ = true;
             }
             if (status == xplm_MouseDrag && window->map_drag_moved_) {
-                const auto coordinate = window->moving_map_model_.unproject(
-                    window->map_drag_start_latitude_, window->map_drag_start_longitude_,
-                    -delta_x / pixels_per_nm, -delta_y / pixels_per_nm);
+                const auto coordinate = unproject_map_coordinate(
+                    window->moving_map_model_.style(), drag_viewport,
+                    center_x - delta_x, center_y - delta_y);
                 if (coordinate.valid) {
                     window->moving_map_model_.pan_to(coordinate.latitude_degrees,
                                                      coordinate.longitude_degrees);
@@ -2464,12 +2637,13 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
             if (status == xplm_MouseUp) {
                 if (!window->map_drag_moved_ && x >= map_left && x <= map_right &&
                     y >= map_bottom && y <= map_top) {
-                    const int center_x = (map_left + map_right) / 2;
-                    const int center_y = (map_top + map_bottom) / 2;
-                    const auto coordinate = window->moving_map_model_.unproject(
+                    const MapTileViewport click_viewport{
+                        map_left, map_top, map_right, map_bottom,
                         window->moving_map_model_.center_latitude_degrees(),
                         window->moving_map_model_.center_longitude_degrees(),
-                        (x - center_x) / pixels_per_nm, (y - center_y) / pixels_per_nm);
+                        window->moving_map_model_.range_nm()};
+                    const auto coordinate = unproject_map_coordinate(
+                        window->moving_map_model_.style(), click_viewport, x, y);
                     if (coordinate.valid) {
                         FlightPlanLeg point;
                         point.identifier = "MAP POINT";
@@ -2786,6 +2960,10 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
         const int content_top = top - status_bar_height - 38;
         const int card_right = responsive_card_right(content_left, right);
         if (x >= card_right - 122 && x <= card_right - 18) {
+            if (y <= content_top - 91 && y >= content_top - 124) {
+                window->toggle_traffic_injection();
+                return 1;
+            }
             if (y <= content_top - 207 && y >= content_top - 240) {
                 window->toggle_high_contrast();
                 return 1;
@@ -2824,12 +3002,17 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
         const int map_top = panel.tile_top;
         const int map_bottom = panel.bottom + 3;
         if (window->map_filters_open_) {
-            const auto filters = map_filter_geometry(map_left, map_top, map_right);
+            const auto filters = map_filter_geometry(map_left, map_top, map_right, map_bottom);
+            window->map_filter_scroll_ =
+                std::clamp(window->map_filter_scroll_, 0, filters.max_scroll);
             if (point_in_rectangle(x, y, filters.left, filters.top,
                                    filters.right, filters.bottom)) {
                 constexpr int step = 25;
-                int row_top = filters.first_row_top;
-                for (int row = 0; row < 9; ++row, row_top -= step) {
+                for (int row = 0; row < 10; ++row) {
+                    const int row_top = filters.first_row_top +
+                        window->map_filter_scroll_ * step - row * step;
+                    if (row_top > filters.first_row_top + 1 ||
+                        row_top - 22 < filters.bottom + 6) continue;
                     if (!point_in_rectangle(x, y, filters.left + 8, row_top,
                                             filters.right - 8, row_top - 22)) continue;
                     switch (row) {
@@ -2841,13 +3024,17 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
                     case 5: window->moving_map_model_.toggle_layer(MapLayer::airports); break;
                     case 6: window->moving_map_model_.toggle_layer(MapLayer::navaids); break;
                     case 7: window->moving_map_model_.toggle_layer(MapLayer::airspace); break;
-                    case 8: window->moving_map_model_.toggle_pois(); break;
+                    case 8: window->moving_map_model_.toggle_layer(MapLayer::traffic); break;
+                    case 9: window->moving_map_model_.toggle_pois(); break;
                     default: break;
                     }
                     return 1;
                 }
-                const int scale_top = filters.first_row_top - 9 * step;
-                if (y <= scale_top && y >= scale_top - 24) {
+                const int scale_top = filters.first_row_top +
+                    window->map_filter_scroll_ * step - 10 * step;
+                if (scale_top <= filters.first_row_top + 1 &&
+                    scale_top - 22 >= filters.bottom + 6 &&
+                    y <= scale_top && y >= scale_top - 24) {
                     if (x >= filters.right - 68 && x <= filters.right - 42) {
                         window->map_marker_scale_ = std::max(75, window->map_marker_scale_ - 25);
                         return 1;
@@ -2903,10 +3090,25 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
         if (x >= map_right - 52 && x <= map_right - 10 &&
             y >= map_bottom + 62 && y <= map_bottom + 98) {
             window->moving_map_model_.recenter_on_aircraft();
-            window->map_action_message_ = "Map centered on aircraft";
+            window->map_action_message_.clear();
             return 1;
         }
         const int marker_hit_radius = std::max(10, window->map_marker_scale_ * 10 / 100);
+        for (const auto& target : window->traffic_hit_targets_) {
+            if (std::abs(x - target.x) <= marker_hit_radius + 3 &&
+                std::abs(y - target.y) <= marker_hit_radius + 3) {
+                if (window->selected_traffic_key_ &&
+                    *window->selected_traffic_key_ == target.key) {
+                    window->selected_traffic_key_.reset();
+                } else {
+                    window->selected_traffic_key_ = target.key;
+                    window->traffic_model_.request_route_lookup(target.callsign);
+                }
+                window->pending_map_navigation_.reset();
+                window->map_action_message_.clear();
+                return 1;
+            }
+        }
         for (const auto& target : window->poi_hit_targets_) {
             if (std::abs(x - target.x) <= marker_hit_radius &&
                 std::abs(y - target.y) <= marker_hit_radius) {
@@ -2978,6 +3180,14 @@ XPLMCursorStatus XPlaneWindow::handle_cursor(XPLMWindowID window_id, int x, int 
         return xplm_CursorDefault;
     }
     const int marker_hit_radius = std::max(10, window->map_marker_scale_ * 10 / 100);
+    for (const auto& target : window->traffic_hit_targets_) {
+        if (std::abs(x - target.x) <= marker_hit_radius + 3 &&
+            std::abs(y - target.y) <= marker_hit_radius + 3) {
+            window->hovered_map_poi_.reset();
+            window->hovered_map_target_.reset();
+            return xplm_CursorArrow;
+        }
+    }
     for (const auto& target : window->poi_hit_targets_) {
         if (std::abs(x - target.x) <= marker_hit_radius &&
             std::abs(y - target.y) <= marker_hit_radius) {
@@ -3072,22 +3282,35 @@ int XPlaneWindow::handle_wheel(XPLMWindowID window_id, int x, int y, int, int cl
     const int map_right = panel.right - 3;
     const int map_top = panel.tile_top;
     const int map_bottom = panel.bottom + 3;
+    if (window->map_filters_open_) {
+        const auto filters = map_filter_geometry(map_left, map_top, map_right, map_bottom);
+        if (point_in_rectangle(x, y, filters.left, filters.top,
+                               filters.right, filters.bottom)) {
+            const int direction = clicks < 0 ? 1 : -1;
+            window->map_filter_scroll_ = std::clamp(
+                window->map_filter_scroll_ + direction * std::abs(clicks),
+                0, filters.max_scroll);
+            return 1;
+        }
+    }
     const int center_x = (map_left + map_right) / 2;
     const int center_y = (map_top + map_bottom) / 2;
-    const double radius_pixels = std::max(
-        40.0, std::min(map_right - map_left, map_top - map_bottom) * 0.46);
-    const double old_pixels_per_nm = radius_pixels / window->moving_map_model_.range_nm();
-    const auto anchor = window->moving_map_model_.unproject(
+    const MapTileViewport old_viewport{
+        map_left, map_top, map_right, map_bottom,
         window->moving_map_model_.center_latitude_degrees(),
         window->moving_map_model_.center_longitude_degrees(),
-        (x - center_x) / old_pixels_per_nm, (y - center_y) / old_pixels_per_nm);
+        window->moving_map_model_.range_nm()};
+    const auto anchor = unproject_map_coordinate(
+        window->moving_map_model_.style(), old_viewport, x, y);
     if (window->moving_map_model_.apply_wheel(clicks) && anchor.valid &&
         (std::abs(x - center_x) > 4 || std::abs(y - center_y) > 4)) {
-        const double new_pixels_per_nm = radius_pixels / window->moving_map_model_.range_nm();
-        const auto new_center = window->moving_map_model_.unproject(
+        const MapTileViewport anchor_viewport{
+            map_left, map_top, map_right, map_bottom,
             anchor.latitude_degrees, anchor.longitude_degrees,
-            -(x - center_x) / new_pixels_per_nm,
-            -(y - center_y) / new_pixels_per_nm);
+            window->moving_map_model_.range_nm()};
+        const auto new_center = unproject_map_coordinate(
+            window->moving_map_model_.style(), anchor_viewport,
+            2 * center_x - x, 2 * center_y - y);
         if (new_center.valid) {
             window->moving_map_model_.pan_to(new_center.latitude_degrees,
                                              new_center.longitude_degrees);

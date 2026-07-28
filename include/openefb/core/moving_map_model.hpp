@@ -27,6 +27,7 @@ enum class MapLayer {
     airports,
     navaids,
     airspace,
+    traffic,
     food,
     golf,
     attractions,
@@ -71,7 +72,7 @@ private:
                                            2.0, 5.0, 10.0, 20.0, 40.0, 80.0, 160.0, 320.0};
     std::size_t zoom_level_{12};
     MapStyle style_{MapStyle::street};
-    std::array<bool, 7> layers_{true, true, true, false, true, true, true};
+    std::array<bool, 8> layers_{true, true, true, false, true, true, true, true};
     bool following_aircraft_{true};
     bool center_available_{false};
     double center_latitude_degrees_{};

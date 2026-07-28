@@ -163,6 +163,29 @@ Internet access is required for tiles not already cached. The native tile adapte
 requests the true sub-1-NM tile scale instead of clamping airport views to a
 regional zoom, allowing Street tiles to reach zoom 19 and Topo tiles to reach
 zoom 17 without falsely enlarging a lower-detail image.
+The Traffic filter combines nearby X-Plane TCAS targets with live ADS-B traffic
+from the free and open [adsb.lol API](https://api.adsb.lol/). Online requests are
+limited to 100 NM around the aircraft, run off the simulator thread every 15
+seconds, reject stale positions, and fall back to TCAS when the network is not
+available. The map shows the active source and required adsb.lol ODbL
+attribution. Traffic is for simulator situational awareness only and must not be
+used for real-world separation or navigation.
+Settings includes an opt-in `Inject online traffic into X-Plane TCAS` control.
+When enabled and online targets are available, OpenEFB requests exclusive
+multiplayer-aircraft access, publishes up to 63 nearby targets to compatible
+cockpit traffic displays, and refreshes the TCAS arrays every frame. OpenEFB
+does not take control when another provider owns traffic and releases control
+when another plugin requests it. This stage supplies TCAS awareness only; it
+does not create exterior 3D aircraft models.
+Yellow traffic aircraft are selectable. Clicking one opens a compact opaque
+card with its published identity, altitude, speed, and, when available, its
+departure and destination. Route metadata is requested only for the selected
+callsign and cached for the simulator session from the
+[adsb.lol VRS standing-data project](https://github.com/adsblol/vrs-standing-data),
+which is released under CC0. Clicking the same aircraft closes the card.
+Inspecting traffic never changes the active FMS route. Provider route metadata
+can be missing or stale and is never guessed; all traffic remains simulator-only
+situational information, not a source for real-world navigation or separation.
 for macOS and Linux is planned; those builds retain the vector map fallback.
 
 Flight Plan now includes an interactive builder with clearly labeled Departure
@@ -179,7 +202,8 @@ runway identifiers, calculated runway dimensions, surfaces, communication
 frequencies, and the installed SID, STAR, and approach names. Searches run in
 the background so scanning large scenery files does not pause the simulator.
 
-Home now has independent WX, APT, NAV, AIR, FOOD, GOLF, and SIGHTS switches. The installed X-Plane
+Home now has independent weather, airport, navaid, airspace, traffic, and POI
+filters. The installed X-Plane
 navigation database supplies nearby airport, VOR, NDB, and fix symbols in addition
 to the active route. Airport and OpenStreetMap place symbols are selectable;
 OpenEFB asks for confirmation before inserting the coordinate after the active

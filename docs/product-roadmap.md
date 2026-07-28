@@ -74,9 +74,33 @@ original open-source code and visuals.
 - RC20: header-free expanded Home map plus automatic five-minute DEP/DEST
   briefing regeneration, current-cycle chart verification, and retry of
   incomplete online chart downloads throughout the active route
+- RC21: persistent automatic flight history with UTC completion time, up to
+  100 retained flights, sampled geographic route tracks, and atomic storage
+  outside the replaceable plugin installation folder
+- RC22: MapLibre-style cached image symbols with scalable collision-aware
+  labels plus a read-only live traffic overlay sourced from X-Plane's TCAS
+  target feed, including callsign, relative altitude, vertical trend, heading
+  vector, and an independent Traffic filter
+- RC22A: exact shared Web Mercator projection for tiles and every map overlay,
+  broader TCAS-provider compatibility, visible traffic target counts, a
+  compact scrollable Filters panel, and silent aircraft recentering
+- RC23: online-first live traffic from the free, open adsb.lol API within a
+  bounded 100-NM aircraft-centered request, 15-second background refresh,
+  stale-position rejection, nearest-target prioritization, TCAS merging and
+  fallback, source diagnostics, and ODbL attribution
+- RC24: persistent opt-in injection of the nearest online targets into
+  X-Plane's TCAS system, exclusive-access arbitration, per-frame dataref
+  refresh, feedback-loop prevention, automatic release for another traffic
+  provider, and clear active/waiting/yielded Settings status
+- RC25: click-selectable traffic aircraft with compact opaque detail cards,
+  aircraft identity, altitude and speed, same-target click-to-close behavior,
+  and cached on-demand departure/destination lookup from the CC0 adsb.lol VRS
+  standing-data set without linking inspection to any FMS action
 
 ## Planned operational workflow
 
+- Provider resilience, user-configurable traffic range, and final traffic
+  acceptance testing across areas with different ADS-B receiver coverage
 - Cross-platform packaging, signed release artifacts, and final simulator validation
 
 ## Release hardening blockers

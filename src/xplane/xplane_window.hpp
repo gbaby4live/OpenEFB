@@ -13,6 +13,7 @@
 #include "openefb/core/route_progress_model.hpp"
 #include "openefb/core/ui_model.hpp"
 #include "openefb/core/telemetry_model.hpp"
+#include "openefb/core/traffic_model.hpp"
 #include "openefb/core/window_controller.hpp"
 #include "openefb/core/weather_model.hpp"
 #include "xplane_preferences.hpp"
@@ -44,6 +45,13 @@ struct PoiHitTarget {
     MapPoi poi;
 };
 
+struct TrafficHitTarget {
+    int x{};
+    int y{};
+    std::string key;
+    std::string callsign;
+};
+
 struct PendingMapNavigation {
     FlightPlanLeg leg;
     std::string name;
@@ -68,6 +76,7 @@ public:
                                                  RouteProgressModel& route_progress_model,
                                                  WeatherModel& weather_model,
                                                  FlightLogModel& flight_log_model,
+                                                 TrafficModel& traffic_model,
                                                  XPlanePreferences& preferences);
 
     ~XPlaneWindow() override;
@@ -101,6 +110,7 @@ private:
                  RouteProgressModel& route_progress_model,
                  WeatherModel& weather_model,
                  FlightLogModel& flight_log_model,
+                 TrafficModel& traffic_model,
                  XPlanePreferences& preferences);
 
     void render(XPLMWindowID window_id) const;
@@ -111,6 +121,7 @@ private:
     void export_current_route();
     void toggle_high_contrast();
     void toggle_comfort_size();
+    void toggle_traffic_injection();
     void resize_interface(double factor);
     void handle_editor_key(char key, char virtual_key);
     void handle_airport_key(char key, char virtual_key);
@@ -142,19 +153,23 @@ private:
     RouteProgressModel& route_progress_model_;
     WeatherModel& weather_model_;
     FlightLogModel& flight_log_model_;
+    TrafficModel& traffic_model_;
     XPlanePreferences& preferences_;
     mutable XPlaneMapTiles map_tiles_;
     mutable XPlaneMapPois map_pois_;
     mutable XPlanePdfViewer pdf_viewer_;
     mutable std::vector<MapHitTarget> map_hit_targets_;
     mutable std::vector<PoiHitTarget> poi_hit_targets_;
+    mutable std::vector<TrafficHitTarget> traffic_hit_targets_;
     mutable std::optional<MapPoi> hovered_map_poi_;
     mutable std::optional<MapHitTarget> hovered_map_target_;
     std::optional<PendingMapNavigation> pending_map_navigation_;
+    std::optional<std::string> selected_traffic_key_;
     std::string map_action_message_;
     bool map_dragging_{false};
     bool map_drag_moved_{false};
     bool map_filters_open_{false};
+    int map_filter_scroll_{0};
     bool navigation_open_{false};
     bool show_map_aircraft_{true};
     bool show_map_aircraft_info_{true};

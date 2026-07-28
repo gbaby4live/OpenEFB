@@ -26,6 +26,7 @@ add_library(openefb_core STATIC
     src/core/planning_model.cpp
     src/core/route_progress_model.cpp
     src/core/telemetry_model.cpp
+    src/core/traffic_model.cpp
     src/core/ui_model.cpp
     src/core/weather_model.cpp
     src/core/window_controller.cpp
@@ -56,11 +57,13 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
         src/xplane/xplane_map_tiles.cpp
         src/xplane/xplane_map_pois.cpp
         src/xplane/xplane_navigation_database.cpp
+        src/xplane/xplane_online_traffic.cpp
         src/xplane/xplane_pdf_viewer.cpp
         src/xplane/xplane_planning.cpp
         src/xplane/xplane_preferences.cpp
         src/xplane/xplane_route_progress.cpp
         src/xplane/xplane_telemetry.cpp
+        src/xplane/xplane_traffic.cpp
         src/xplane/xplane_weather.cpp
         src/xplane/xplane_window.cpp
     )

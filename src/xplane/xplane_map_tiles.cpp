@@ -239,6 +239,52 @@ std::vector<std::uint8_t> decode_png(const std::vector<std::uint8_t>&) { return 
 
 } // namespace
 
+MapTileScreenPoint project_map_coordinate(MapStyle style, const MapTileViewport& viewport,
+                                          double latitude_degrees,
+                                          double longitude_degrees) noexcept {
+    MapTileScreenPoint point;
+    if (!std::isfinite(latitude_degrees) || !std::isfinite(longitude_degrees) ||
+        latitude_degrees < -90.0 || latitude_degrees > 90.0 ||
+        longitude_degrees < -180.0 || longitude_degrees > 180.0) {
+        return point;
+    }
+    const int zoom = tile_zoom(style, viewport);
+    const double world_size = static_cast<double>(tile_size * (1 << zoom));
+    const double center_world_x = world_x(viewport.longitude_degrees, zoom);
+    const double center_world_y = world_y(viewport.latitude_degrees, zoom);
+    double delta_x = world_x(longitude_degrees, zoom) - center_world_x;
+    if (delta_x > world_size * 0.5) delta_x -= world_size;
+    if (delta_x < -world_size * 0.5) delta_x += world_size;
+    point.valid = true;
+    point.x = (viewport.left + viewport.right) * 0.5 + delta_x;
+    point.y = (viewport.top + viewport.bottom) * 0.5 -
+              (world_y(latitude_degrees, zoom) - center_world_y);
+    return point;
+}
+
+MapCoordinate unproject_map_coordinate(MapStyle style, const MapTileViewport& viewport,
+                                       double screen_x, double screen_y) noexcept {
+    MapCoordinate coordinate;
+    if (!std::isfinite(screen_x) || !std::isfinite(screen_y)) return coordinate;
+    const int zoom = tile_zoom(style, viewport);
+    const double world_size = static_cast<double>(tile_size * (1 << zoom));
+    const double center_world_x = world_x(viewport.longitude_degrees, zoom);
+    const double center_world_y = world_y(viewport.latitude_degrees, zoom);
+    double target_world_x = center_world_x +
+        screen_x - (viewport.left + viewport.right) * 0.5;
+    const double target_world_y = std::clamp(
+        center_world_y - (screen_y - (viewport.top + viewport.bottom) * 0.5),
+        0.0, world_size);
+    target_world_x = std::fmod(target_world_x, world_size);
+    if (target_world_x < 0.0) target_world_x += world_size;
+    coordinate.longitude_degrees = target_world_x / world_size * 360.0 - 180.0;
+    const double mercator = pi * (1.0 - 2.0 * target_world_y / world_size);
+    coordinate.latitude_degrees = std::atan(std::sinh(mercator)) * 180.0 / pi;
+    coordinate.valid = std::isfinite(coordinate.latitude_degrees) &&
+                       std::isfinite(coordinate.longitude_degrees);
+    return coordinate;
+}
+
 class XPlaneMapTiles::Implementation final {
 public:
     explicit Implementation(std::filesystem::path cache_directory)

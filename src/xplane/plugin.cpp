@@ -12,6 +12,7 @@
 #include "openefb/core/route_progress_model.hpp"
 #include "openefb/core/ui_model.hpp"
 #include "openefb/core/telemetry_model.hpp"
+#include "openefb/core/traffic_model.hpp"
 #include "openefb/core/weather_model.hpp"
 #include "openefb/core/window_controller.hpp"
 #include "xplane_flight_plan.hpp"
@@ -26,6 +27,7 @@
 #include "xplane_planning.hpp"
 #include "xplane_route_progress.hpp"
 #include "xplane_telemetry.hpp"
+#include "xplane_traffic.hpp"
 #include "xplane_weather.hpp"
 #include "xplane_window.hpp"
 
@@ -46,6 +48,7 @@ struct PluginRuntime {
         : application(xplane_log),
           ui_model(),
           telemetry_model(),
+          traffic_model(),
           flight_plan_model(),
           flight_plan_editor(),
           airport_info_model(),
@@ -60,11 +63,13 @@ struct PluginRuntime {
           weather_model(),
           preferences(),
           telemetry(telemetry_model),
+          traffic(traffic_model, telemetry_model),
           flight_plan(flight_plan_model),
           airport_data(airport_info_model),
           airspace(airspace_model),
           fuel(fuel_model, telemetry_model),
-          flight_logger(flight_log_model, telemetry_model, flight_plan_model),
+          flight_logger(flight_log_model, telemetry_model, flight_plan_model,
+                        preferences.flight_log_file()),
           route_progress(route_progress_model, telemetry_model, flight_plan_model),
           planning(planning_model, fuel_model, route_progress_model),
           briefing_library(briefing_model, flight_plan_model, weather_model, planning_model,
@@ -79,7 +84,7 @@ struct PluginRuntime {
                   fuel_model, planning_model, briefing_model, briefing_library, moving_map_model,
                   navigation_database_model,
                   route_progress_model,
-                  weather_model, flight_log_model, preferences);
+                  weather_model, flight_log_model, traffic_model, preferences);
           }),
           menu([this] { toggle_window(); }) {
         briefing_model.set_notes(preferences.load_briefing_notes());
@@ -102,6 +107,7 @@ struct PluginRuntime {
     openefb::Application application;
     openefb::UiModel ui_model;
     openefb::TelemetryModel telemetry_model;
+    openefb::TrafficModel traffic_model;
     openefb::FlightPlanModel flight_plan_model;
     openefb::FlightPlanEditor flight_plan_editor;
     openefb::AirportInfoModel airport_info_model;
@@ -116,6 +122,7 @@ struct PluginRuntime {
     openefb::WeatherModel weather_model;
     openefb::xplane::XPlanePreferences preferences;
     openefb::xplane::XPlaneTelemetry telemetry;
+    openefb::xplane::XPlaneTraffic traffic;
     openefb::xplane::XPlaneFlightPlan flight_plan;
     openefb::xplane::XPlaneAirportData airport_data;
     openefb::xplane::XPlaneAirspace airspace;
@@ -172,6 +179,7 @@ PLUGIN_API void XPluginStop() {
         runtime->flight_logger.stop();
         runtime->flight_plan.stop();
         runtime->telemetry.stop();
+        runtime->traffic.stop();
         runtime->window_controller.reset();
         runtime->application.stop();
         runtime.reset();
@@ -184,6 +192,9 @@ PLUGIN_API int XPluginEnable() {
     }
     if (!runtime->telemetry.start()) {
         PluginRuntime::xplane_log("telemetry datarefs unavailable");
+    }
+    if (!runtime->traffic.start()) {
+        PluginRuntime::xplane_log("traffic datarefs unavailable");
     }
     if (!runtime->flight_plan.start()) {
         PluginRuntime::xplane_log("flight plan unavailable");
@@ -231,12 +242,17 @@ PLUGIN_API void XPluginDisable() {
         runtime->flight_logger.stop();
         runtime->flight_plan.stop();
         runtime->telemetry.stop();
+        runtime->traffic.stop();
         runtime->window_controller.reset();
         runtime->application.disable();
     }
 }
 
 PLUGIN_API void XPluginReceiveMessage(XPLMPluginID, int message, void* parameter) {
+    if (runtime && message == XPLM_MSG_RELEASE_PLANES) {
+        runtime->traffic.on_release_requested();
+        return;
+    }
     if (runtime && message == XPLM_MSG_PLANE_LOADED && reinterpret_cast<std::intptr_t>(parameter) == 0) {
         runtime->telemetry.refresh_aircraft_identity();
         runtime->application.on_flight_loaded();

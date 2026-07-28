@@ -99,3 +99,90 @@ failed step. Map/PDF visibility failures are release blockers, not optional poli
    after updated weather arrives or within five minutes.
 5. Confirm existing current-cycle FAA charts are retained without duplicate
    files and incomplete downloads are retried.
+# RC21 persistent flight history
+
+1. Complete a flight lasting at least 30 airborne seconds and land below
+   45 knots groundspeed.
+2. Confirm Logbook shows UTC time, aircraft, route, airborne time, distance,
+   maximum altitude, and landing rate.
+3. Close X-Plane, restart it, and confirm the completed flight remains.
+4. Replace the OpenEFB plugin build and confirm history remains because it is
+   stored under `Output/preferences/OpenEFB/flight-history.tsv`.
+5. Confirm a rejected or very short takeoff does not create a completed entry.
+
+# RC22 live traffic and map symbols
+
+1. Enable X-Plane AI aircraft or a traffic plugin that publishes targets to
+   X-Plane's TCAS datarefs.
+2. Open Home > Filter and confirm `Traffic` appears as its own filled toggle.
+3. With Traffic enabled, confirm nearby targets use yellow aircraft image
+   symbols with direction vectors rather than letter-only markers.
+4. Confirm an uncrowded target label shows its callsign and either `GND` or
+   relative altitude in hundreds of feet with climb, descent, or level trend.
+5. Turn Traffic off and confirm all traffic symbols, vectors, and labels
+   disappear while route, POI, airport, and navaid layers remain unchanged.
+6. Turn Traffic back on and confirm the ownship symbol remains visually
+   distinct and the map continues to pan, zoom, and resize smoothly.
+
+# RC22A map alignment and compact filters
+
+1. Open Home > Filter and confirm the Traffic row reports the number of TCAS
+   targets OpenEFB currently receives.
+2. At a compact window size, place the pointer over Filters and use the mouse
+   wheel to reach every filter and the icon-size controls; confirm the scroll
+   thumb reflects the current position.
+3. Fly on or near the active magenta route and zoom repeatedly from regional
+   range down to airport detail. Confirm the aircraft, route, traffic, POIs,
+   airspace, and basemap remain geographically aligned at every zoom step.
+4. Zoom around an off-center pointer, click map points, and drag the map.
+   Confirm the pointer location remains fixed and selected coordinates match
+   the visible basemap feature.
+5. Press HOME and confirm the map returns to the aircraft without displaying
+   a persistent `Map centered on aircraft` message.
+
+# RC23 online ADS-B traffic
+
+1. Start X-Plane with internet access and a valid live aircraft position.
+2. Open Home > Filter, enable Traffic, and wait up to 20 seconds for the first
+   bounded adsb.lol request.
+3. Confirm the Traffic row changes to `ONLINE` or `ONLINE+TCAS` and reports a
+   nonzero count when covered live aircraft are within 100 NM.
+4. Confirm yellow aircraft symbols, callsigns, relative altitudes, vertical
+   trends, and track vectors update without pausing the simulator.
+5. Confirm the map footer attributes traffic to `adsb.lol (ODbL)` while the
+   online source is active.
+6. Disconnect the network and confirm existing X-Plane TCAS traffic remains
+   available as fallback without OpenEFB taking ownership of the TCAS system.
+
+# RC24 X-Plane TCAS injection
+
+1. Confirm Settings > `Inject online traffic into X-Plane TCAS` is disabled by
+   default, then enable it while online traffic has a nonzero target count.
+2. Confirm the Settings card reports `Active` and the number of online targets
+   written to X-Plane TCAS.
+3. In a TCAS-capable aircraft, confirm nearby targets appear on the cockpit
+   traffic display with plausible bearing, range, relative altitude, and ID.
+4. Disable injection and confirm OpenEFB immediately releases X-Plane traffic
+   ownership while the EFB map traffic layer continues operating.
+5. Enable another traffic plugin and confirm OpenEFB waits or yields instead of
+   overriding it. After a yield, turn injection off and on to request access again.
+6. Restart X-Plane and confirm the saved injection preference returns. Keep the
+   feature disabled when using another traffic injector.
+7. Confirm this stage does not create exterior 3D aircraft; it supplies cockpit
+   TCAS targets only.
+
+# RC25 clickable traffic details
+
+1. Enable Home > Filter > Traffic and wait for yellow traffic aircraft.
+2. Click one aircraft and confirm a compact, fully opaque card shows its
+   callsign/registration, aircraft name or type, altitude, and speed.
+3. With internet access, allow a few seconds for the selected target's route
+   lookup. Confirm published departure and destination codes appear, or the
+   card clearly reports that they were not published.
+4. Click the same aircraft again and confirm the card closes.
+5. Click another aircraft and confirm the card switches targets without
+   opening a POI dialog or modifying the active FMS route.
+6. Resize OpenEFB to its compact minimum and confirm the card stays inside the
+   map, remains readable, and does not become transparent.
+7. Disconnect the network and confirm traffic inspection remains safe: live
+   altitude/speed still display while unavailable route data is not guessed.

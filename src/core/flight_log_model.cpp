@@ -26,18 +26,22 @@ void FlightLogModel::update_route(const FlightPlanSnapshot& flight_plan) {
     snapshot_.destination = flight_plan.legs.back().identifier.empty() ? "Not set" : flight_plan.legs.back().identifier;
 }
 
-void FlightLogModel::complete_flight(const TelemetrySnapshot& telemetry) {
+void FlightLogModel::complete_flight(const TelemetrySnapshot& telemetry,
+                                     std::string_view completed_utc) {
     if (snapshot_.airborne_seconds < 30) return;
-    FlightLogEntry entry{snapshot_.aircraft_name, snapshot_.departure, snapshot_.destination,
+    FlightLogEntry entry{std::string(completed_utc), snapshot_.aircraft_name,
+                         snapshot_.departure, snapshot_.destination,
                          snapshot_.airborne_seconds, snapshot_.distance_nm,
-                         snapshot_.maximum_altitude_feet, telemetry.vertical_speed_fpm};
+                         snapshot_.maximum_altitude_feet, telemetry.vertical_speed_fpm,
+                         std::move(current_track_)};
     snapshot_.last_landing_vertical_speed_fpm = telemetry.vertical_speed_fpm;
     snapshot_.entries.insert(snapshot_.entries.begin(), std::move(entry));
-    if (snapshot_.entries.size() > 12) snapshot_.entries.pop_back();
+    if (snapshot_.entries.size() > 100) snapshot_.entries.pop_back();
 }
 
 void FlightLogModel::update(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot& flight_plan,
-                            bool on_ground, double elapsed_seconds) {
+                            bool on_ground, double elapsed_seconds,
+                            std::string_view completed_utc) {
     if (!telemetry.available) return;
     snapshot_.tracking = true;
     snapshot_.aircraft_name = telemetry.aircraft_name;
@@ -51,6 +55,15 @@ void FlightLogModel::update(const TelemetrySnapshot& telemetry, const FlightPlan
                                                telemetry.latitude_degrees, telemetry.longitude_degrees);
             if (segment < 5.0) snapshot_.distance_nm += segment;
         }
+        const bool add_track_point = current_track_.empty() ||
+            distance_nm(current_track_.back().latitude_degrees,
+                        current_track_.back().longitude_degrees,
+                        telemetry.latitude_degrees, telemetry.longitude_degrees) >= 0.1;
+        if (add_track_point && current_track_.size() < 4096) {
+            current_track_.push_back({telemetry.latitude_degrees,
+                                      telemetry.longitude_degrees,
+                                      telemetry.altitude_feet});
+        }
     }
     previous_latitude_ = telemetry.latitude_degrees;
     previous_longitude_ = telemetry.longitude_degrees;
@@ -62,8 +75,16 @@ void FlightLogModel::update(const TelemetrySnapshot& telemetry, const FlightPlan
         snapshot_.airborne_seconds = 0;
         snapshot_.distance_nm = 0.0;
         snapshot_.maximum_altitude_feet = telemetry.altitude_feet;
+        current_track_.clear();
+        current_track_.push_back({telemetry.latitude_degrees,
+                                  telemetry.longitude_degrees,
+                                  telemetry.altitude_feet});
     } else if (snapshot_.airborne && on_ground && telemetry.ground_speed_knots < 45.0) {
-        complete_flight(telemetry);
+        current_track_.push_back({telemetry.latitude_degrees,
+                                  telemetry.longitude_degrees,
+                                  telemetry.altitude_feet});
+        complete_flight(telemetry, completed_utc);
+        current_track_.clear();
         snapshot_.airborne = false;
         snapshot_.airborne_seconds = 0;
         snapshot_.distance_nm = 0.0;
@@ -72,11 +93,18 @@ void FlightLogModel::update(const TelemetrySnapshot& telemetry, const FlightPlan
     snapshot_.revision = next_revision_++;
 }
 
+void FlightLogModel::replace_entries(std::vector<FlightLogEntry> entries) {
+    if (entries.size() > 100) entries.resize(100);
+    snapshot_.entries = std::move(entries);
+    snapshot_.revision = next_revision_++;
+}
+
 void FlightLogModel::reset_current_flight() noexcept {
     snapshot_.airborne = false;
     snapshot_.airborne_seconds = 0;
     snapshot_.distance_nm = 0.0;
     snapshot_.maximum_altitude_feet = 0.0;
+    current_track_.clear();
     snapshot_.revision = next_revision_++;
 }
 

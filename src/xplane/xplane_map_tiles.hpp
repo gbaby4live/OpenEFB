@@ -21,6 +21,19 @@ struct MapTileViewport {
     double range_nm{};
 };
 
+struct MapTileScreenPoint {
+    bool valid{false};
+    double x{};
+    double y{};
+};
+
+[[nodiscard]] MapTileScreenPoint project_map_coordinate(
+    MapStyle style, const MapTileViewport& viewport,
+    double latitude_degrees, double longitude_degrees) noexcept;
+[[nodiscard]] MapCoordinate unproject_map_coordinate(
+    MapStyle style, const MapTileViewport& viewport,
+    double screen_x, double screen_y) noexcept;
+
 class XPlaneMapTiles final {
 public:
     explicit XPlaneMapTiles(std::filesystem::path cache_directory);

@@ -28,12 +28,15 @@ DisplayPreferences XPlanePreferences::load_display_preferences() const {
         int version{};
         int high_contrast{};
         int comfort_size{};
+        int inject_traffic{};
         int legacy_night_mode{};
         if (input >> signature >> version && signature == "OpenEFBDisplay" &&
             ((version == 1 && (input >> high_contrast >> comfort_size)) ||
-             (version == 2 && (input >> legacy_night_mode >> high_contrast >> comfort_size)))) {
+             (version == 2 && (input >> legacy_night_mode >> high_contrast >> comfort_size)) ||
+             (version == 3 && (input >> high_contrast >> comfort_size >> inject_traffic)))) {
             preferences.high_contrast = high_contrast != 0;
             preferences.comfort_size = comfort_size != 0;
+            preferences.inject_traffic = inject_traffic != 0;
         }
     } catch (...) {
     }
@@ -44,14 +47,19 @@ void XPlanePreferences::save_display_preferences(const DisplayPreferences& prefe
     try {
         std::filesystem::create_directories(display_path_.parent_path());
         std::ofstream output(display_path_, std::ios::trunc);
-        output << "OpenEFBDisplay 1\n" << (preferences.high_contrast ? 1 : 0) << ' '
-               << (preferences.comfort_size ? 1 : 0) << '\n';
+        output << "OpenEFBDisplay 3\n" << (preferences.high_contrast ? 1 : 0) << ' '
+               << (preferences.comfort_size ? 1 : 0) << ' '
+               << (preferences.inject_traffic ? 1 : 0) << '\n';
     } catch (...) {
     }
 }
 
 std::filesystem::path XPlanePreferences::flight_plan_directory() const {
     return xplane_root_ / "Output" / "FMS plans";
+}
+
+std::filesystem::path XPlanePreferences::flight_log_file() const {
+    return file_path_.parent_path() / "OpenEFB" / "flight-history.tsv";
 }
 
 std::optional<WindowGeometry> XPlanePreferences::load_geometry() const {

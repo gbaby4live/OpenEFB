@@ -12,6 +12,7 @@ namespace openefb::xplane {
 struct DisplayPreferences {
     bool high_contrast{false};
     bool comfort_size{false};
+    bool inject_traffic{false};
 };
 
 class XPlanePreferences final {
@@ -28,6 +29,7 @@ public:
     [[nodiscard]] DisplayPreferences load_display_preferences() const;
     void save_display_preferences(const DisplayPreferences& preferences) const;
     [[nodiscard]] std::filesystem::path flight_plan_directory() const;
+    [[nodiscard]] std::filesystem::path flight_log_file() const;
 
 private:
     std::filesystem::path file_path_;

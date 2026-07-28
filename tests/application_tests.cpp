@@ -14,6 +14,7 @@
 #include "openefb/core/planning_model.hpp"
 #include "openefb/core/route_progress_model.hpp"
 #include "openefb/core/telemetry_model.hpp"
+#include "openefb/core/traffic_model.hpp"
 #include "openefb/core/ui_model.hpp"
 #include "openefb/core/window_controller.hpp"
 #include "openefb/core/window_geometry.hpp"
@@ -549,6 +550,36 @@ int main() {
     require(!openefb::parse_xplane_fms(invalid_fms).success,
             "incomplete FMS plans are rejected safely");
 
+    openefb::TrafficModel traffic_model;
+    traffic_model.update({
+        {0xABC123, "TEST123", "B738", 47.5, -122.3, 6000.0, 180.0, 220.0, 500.0, false},
+        {0xBAD001, "INVALID", "C172", 120.0, 0.0, 1000.0, 0.0, 0.0, 0.0, false},
+    }, openefb::TrafficSource::blended, 1, 1, "ADSB.LOL ONLINE / TCAS 1");
+    require(traffic_model.snapshot().available &&
+                traffic_model.snapshot().targets.size() == 1 &&
+                traffic_model.snapshot().targets.front().callsign == "TEST123" &&
+                traffic_model.snapshot().source == openefb::TrafficSource::blended &&
+                traffic_model.snapshot().online_target_count == 1,
+            "traffic model publishes source-aware targets and rejects invalid coordinates");
+    const auto route_revision = traffic_model.snapshot().route_request_revision;
+    traffic_model.request_route_lookup("TEST123");
+    require(traffic_model.snapshot().route_request_callsign == "TEST123" &&
+                traffic_model.snapshot().route_request_revision == route_revision + 1,
+            "traffic model publishes on-demand route lookup requests for selected targets");
+    traffic_model.set_injection_requested(true);
+    traffic_model.set_injection_state(true, "Active - 1 online target in X-Plane TCAS");
+    require(traffic_model.snapshot().injection_requested &&
+                traffic_model.snapshot().injection_active &&
+                traffic_model.snapshot().injection_status.find("Active") != std::string::npos,
+            "traffic model exposes requested and active TCAS injection state");
+    traffic_model.set_injection_requested(false);
+    require(!traffic_model.snapshot().injection_requested &&
+                !traffic_model.snapshot().injection_active,
+            "disabling traffic injection clears the active state");
+    traffic_model.mark_unavailable();
+    require(!traffic_model.snapshot().available && traffic_model.snapshot().targets.empty(),
+            "traffic model clears stale targets when the simulator source stops");
+
     openefb::FlightPlanSnapshot log_route;
     log_route.available = true;
     log_route.legs = {
@@ -563,24 +594,26 @@ int main() {
     log_telemetry.altitude_feet = 500.0;
     log_telemetry.ground_speed_knots = 10.0;
     openefb::FlightLogModel flight_log;
-    flight_log.update(log_telemetry, log_route, true, 1.0);
+    flight_log.update(log_telemetry, log_route, true, 1.0, "2026-07-27 10:00 UTC");
     log_telemetry.ground_speed_knots = 70.0;
     log_telemetry.altitude_feet = 1200.0;
     log_telemetry.latitude_degrees += 0.01;
-    flight_log.update(log_telemetry, log_route, false, 31.0);
+    flight_log.update(log_telemetry, log_route, false, 31.0, "2026-07-27 10:01 UTC");
     require(flight_log.snapshot().airborne && flight_log.snapshot().departure == "KSEA" &&
                 flight_log.snapshot().destination == "KPDX",
             "flight logger starts airborne route tracking from the active plan");
     log_telemetry.latitude_degrees += 0.01;
     log_telemetry.altitude_feet = 2500.0;
-    flight_log.update(log_telemetry, log_route, false, 60.0);
+    flight_log.update(log_telemetry, log_route, false, 60.0, "2026-07-27 10:02 UTC");
     log_telemetry.ground_speed_knots = 20.0;
     log_telemetry.vertical_speed_fpm = -420.0;
-    flight_log.update(log_telemetry, log_route, true, 1.0);
+    flight_log.update(log_telemetry, log_route, true, 1.0, "2026-07-27 10:03 UTC");
     require(!flight_log.snapshot().entries.empty() &&
                 flight_log.snapshot().entries.front().maximum_altitude_feet >= 2500.0 &&
-                flight_log.snapshot().entries.front().landing_vertical_speed_fpm == -420.0,
-            "flight logger records landing metrics after a completed flight");
+                flight_log.snapshot().entries.front().landing_vertical_speed_fpm == -420.0 &&
+                flight_log.snapshot().entries.front().completed_utc == "2026-07-27 10:03 UTC" &&
+                flight_log.snapshot().entries.front().track.size() >= 3,
+            "flight logger records timestamped landing metrics and route track");
 
     std::cout << "OpenEFB core tests passed\n";
     return EXIT_SUCCESS;
