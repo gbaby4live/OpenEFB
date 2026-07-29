@@ -96,7 +96,12 @@ std::vector<FaaChart> parse_faa_chart_catalog(std::string_view xml,
         const auto tag_end = xml.find('>', airport_position);
         if (tag_end == std::string_view::npos) break;
         const auto tag = xml.substr(airport_position, tag_end - airport_position + 1);
-        if (uppercase(xml_attribute(tag, "icao_ident")) != wanted) {
+        const std::string icao_identifier = uppercase(xml_attribute(tag, "icao_ident"));
+        const std::string faa_identifier = uppercase(xml_attribute(tag, "apt_ident"));
+        const std::string domestic_identifier = wanted.size() == 4 && wanted.front() == 'K'
+            ? wanted.substr(1) : wanted;
+        if (icao_identifier != wanted && faa_identifier != wanted &&
+            faa_identifier != domestic_identifier) {
             airport_position = tag_end + 1;
             continue;
         }
@@ -111,7 +116,12 @@ std::vector<FaaChart> parse_faa_chart_catalog(std::string_view xml,
             const auto record = airport.substr(record_position, record_end - record_position);
             FaaChart chart{xml_value(record, "chart_code"), xml_value(record, "chart_name"),
                            xml_value(record, "pdf_name")};
-            if (safe_pdf_name(chart.pdf_name)) charts.push_back(std::move(chart));
+            const std::string action = uppercase(xml_value(record, "useraction"));
+            if (safe_pdf_name(chart.pdf_name) && action != "D" &&
+                uppercase(chart.pdf_name) != "DELETED_JOB.PDF" &&
+                uppercase(chart.pdf_name) != "DEL_APT_SERVED.PDF") {
+                charts.push_back(std::move(chart));
+            }
             record_position = record_end + 9;
         }
         break;

@@ -259,6 +259,8 @@ int main() {
                          openefb::WeatherSource::online};
     weather.destination = {"KPDX", "KPDX 251653Z 22005KT 10SM SCT025 17/10 A3001",
                            openefb::WeatherSource::cache};
+    weather.departure.taf = "KSEA 251720Z 2518/2624 18008KT P6SM SCT020";
+    weather.departure.forecast_source = openefb::WeatherSource::online;
     weather.route_revision = 4;
     weather_model.update(weather);
     require(weather_model.snapshot().available, "weather update marks the service available");
@@ -269,6 +271,10 @@ int main() {
     require(weather_model.snapshot().departure.source == openefb::WeatherSource::online &&
                 weather_model.snapshot().destination.source == openefb::WeatherSource::cache,
             "weather source priority is visible to the UI");
+    require(weather_model.snapshot().departure.taf.find("KSEA") == 0 &&
+                weather_model.snapshot().departure.forecast_source ==
+                    openefb::WeatherSource::online,
+            "published TAF forecast and its source are retained independently of METAR");
     require(weather_model.snapshot().route_revision == 4,
             "weather records their source route revision");
     require(weather_model.snapshot().revision == 1, "weather updates have revisions");
@@ -430,6 +436,16 @@ int main() {
                 faa_charts[0].name == "AIRPORT & DIAGRAM" &&
                 faa_charts[1].pdf_name == "00582I16L.PDF",
             "FAA d-TPP catalog parser selects and decodes one airport's charts");
+    const std::string faa_domestic_catalog =
+        "<airport_name ID=\"SMALL FIELD\" apt_ident=\"ABC\" icao_ident=\"\">"
+        "<record><chart_code>APD</chart_code><chart_name>AIRPORT DIAGRAM</chart_name>"
+        "<useraction></useraction><pdf_name>00123AD.PDF</pdf_name></record>"
+        "<record><chart_code>STAR</chart_code><chart_name>DELETED</chart_name>"
+        "<useraction>D</useraction><pdf_name>DEL_APT_SERVED.PDF</pdf_name></record>"
+        "</airport_name>";
+    const auto domestic_charts = openefb::parse_faa_chart_catalog(faa_domestic_catalog, "KABC");
+    require(domestic_charts.size() == 1 && domestic_charts.front().pdf_name == "00123AD.PDF",
+            "FAA parser falls back to domestic identifiers and ignores deletion placeholders");
 
     const auto places = openefb::parse_overpass_pois(
         "101\t24.556\t-81.782\tHarbor Cafe\tcafe\t\t\t\t\n"
@@ -554,13 +570,22 @@ int main() {
     traffic_model.update({
         {0xABC123, "TEST123", "B738", 47.5, -122.3, 6000.0, 180.0, 220.0, 500.0, false},
         {0xBAD001, "INVALID", "C172", 120.0, 0.0, 1000.0, 0.0, 0.0, 0.0, false},
-    }, openefb::TrafficSource::blended, 1, 1, "ADSB.LOL ONLINE / TCAS 1");
+    }, openefb::TrafficSource::blended, 1, 1,
+       "ADSB.LOL request failed / retry 15s / TCAS 1", true);
     require(traffic_model.snapshot().available &&
                 traffic_model.snapshot().targets.size() == 1 &&
                 traffic_model.snapshot().targets.front().callsign == "TEST123" &&
                 traffic_model.snapshot().source == openefb::TrafficSource::blended &&
-                traffic_model.snapshot().online_target_count == 1,
+                traffic_model.snapshot().online_target_count == 1 &&
+                traffic_model.snapshot().online_degraded,
             "traffic model publishes source-aware targets and rejects invalid coordinates");
+    traffic_model.set_online_range_nm(10);
+    require(traffic_model.snapshot().online_range_nm == 25,
+            "traffic range clamps to the provider-safe minimum");
+    traffic_model.set_online_range_nm(500);
+    require(traffic_model.snapshot().online_range_nm == 200,
+            "traffic range clamps to the provider-safe maximum");
+    traffic_model.set_online_range_nm(100);
     const auto route_revision = traffic_model.snapshot().route_request_revision;
     traffic_model.request_route_lookup("TEST123");
     require(traffic_model.snapshot().route_request_callsign == "TEST123" &&
@@ -572,12 +597,23 @@ int main() {
                 traffic_model.snapshot().injection_active &&
                 traffic_model.snapshot().injection_status.find("Active") != std::string::npos,
             "traffic model exposes requested and active TCAS injection state");
+    traffic_model.set_visual_traffic_requested(true);
+    traffic_model.set_visual_traffic_state(true, "Active - 1 moving 3D aircraft within 25 NM");
+    require(traffic_model.snapshot().visual_traffic_requested &&
+                traffic_model.snapshot().visual_traffic_active &&
+                traffic_model.snapshot().visual_traffic_status.find("3D") != std::string::npos,
+            "traffic model exposes optional exterior 3D traffic state");
+    traffic_model.set_visual_traffic_requested(false);
+    require(!traffic_model.snapshot().visual_traffic_active &&
+                traffic_model.snapshot().visual_traffic_status == "Disabled",
+            "disabling exterior traffic clears its active state");
     traffic_model.set_injection_requested(false);
     require(!traffic_model.snapshot().injection_requested &&
                 !traffic_model.snapshot().injection_active,
             "disabling traffic injection clears the active state");
     traffic_model.mark_unavailable();
-    require(!traffic_model.snapshot().available && traffic_model.snapshot().targets.empty(),
+    require(!traffic_model.snapshot().available && traffic_model.snapshot().targets.empty() &&
+                !traffic_model.snapshot().online_degraded,
             "traffic model clears stale targets when the simulator source stops");
 
     openefb::FlightPlanSnapshot log_route;

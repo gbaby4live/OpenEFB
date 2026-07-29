@@ -186,3 +186,71 @@ failed step. Map/PDF visibility failures are release blockers, not optional poli
    map, remains readable, and does not become transparent.
 7. Disconnect the network and confirm traffic inspection remains safe: live
    altitude/speed still display while unavailable route data is not guessed.
+
+# RC26 traffic range and provider resilience
+
+1. Open Home > Filter and scroll to `ONLINE RANGE`. Use `-` and `+` to verify
+   the value moves in 25-NM steps and remains bounded between 25 and 200 NM.
+2. Select 25 NM, restart X-Plane, and confirm the saved range returns. Repeat at
+   100 NM before continuing normal testing.
+3. With internet access, confirm the Source row reports `ADSB.LOL ONLINE` and
+   the configured radius while the Traffic row reports ONLINE or ONLINE+TCAS.
+4. Disconnect the network. Confirm the filter reports a retry/degraded state,
+   retains only the recent online picture temporarily, and does not freeze the
+   simulator.
+5. Keep the network disconnected for longer than 90 seconds. Confirm stale
+   online aircraft disappear and available X-Plane TCAS traffic remains.
+6. Reconnect the network and allow the displayed retry interval to elapse.
+   Confirm ONLINE service and normal 15-second refresh recover automatically.
+7. Rapidly open and close several traffic cards and change range repeatedly.
+   Confirm requests remain bounded, the UI stays responsive, and TCAS ownership
+   behavior from RC24 remains unchanged.
+
+# RC27 route, forecast, traffic-alert, and responsive UI
+
+1. Add two map coordinates. Confirm both stay before the destination and the
+   X-Plane FMS advances through them in order.
+2. Select an added waypoint again, choose Remove, and confirm navigation
+   continues to the next waypoint. Confirm route endpoints show `ROUTE END`.
+3. Select an airport marker and confirm its code and full name appear.
+4. Switch Weather between CURRENT and FORECAST. Confirm the view visibly changes
+   between current METAR and the published TAF, with separate source labels.
+5. Compare the `ALT` and `HDG` values with the pilot cockpit instruments.
+6. On X-Plane 12.4.1 or newer with an equipped aircraft, enable injection and
+   confirm nearby Mode 7 targets can generate native TCAS traffic advisories.
+7. Resize OpenEFB to minimum height and mouse-wheel every non-map page. Confirm
+   hidden content is reachable, remains clipped inside the EFB, and does not overlap.
+8. Confirm compact Briefing Library controls reflow into two rows and chart
+   availability text remains readable.
+
+# RC28 exterior traffic, FAA charts, and settings
+
+1. Enable traffic injection and `Moving exterior 3D traffic` in Settings. With
+   online targets nearby, confirm up to 12 recognizable regional-jet models move in the
+   exterior world within 25 NM and cockpit TCAS remains operational. Confirm the
+   Settings status reports the active model count, model source, and nearest target
+   distance. If X-Plane's installed model is unavailable, confirm the OpenEFB
+   lightweight fallback still appears.
+2. Disable exterior 3D traffic and confirm the models disappear while map and
+   cockpit traffic continue. Re-enable it and confirm the models return.
+3. Disable TCAS injection or allow another cooperative plugin to take ownership.
+   Confirm OpenEFB's enabled exterior models remain visible while its cockpit
+   injection status changes independently.
+4. Confirm the Home aircraft strip reads `ALT`, `GS`, and `HDG` without `IND`,
+   and no characters extend outside its dark panel at minimum width.
+5. Change aircraft-strip visibility, route visibility, map labels, and marker
+   size in Settings. Restart X-Plane and confirm each choice persists.
+6. Load a U.S. departure and destination, select Briefing > Library, and press
+   Refresh. Confirm current-cycle FAA chart PDFs appear for airports published
+   in d-TPP and the old status PDF disappears.
+7. If an FAA download fails, open `Chart Download Status.pdf` and confirm it
+   identifies the airport, cycle, and HTTP/download result rather than claiming
+   only that coverage is U.S.-limited.
+8. Confirm non-ICAO domestic identifiers can match FAA records and deletion
+   placeholder records are not downloaded as charts.
+9. Drag `Magenta route thickness` from 2 px to 12 px. Confirm the route updates
+   immediately, remains readable over the map, and restores after restarting X-Plane.
+10. Place or observe airborne traffic within 3 NM and 1,200 vertical feet. Confirm
+    OpenEFB displays a traffic callout and, when X-Plane text-to-speech is enabled,
+    speaks clock position, distance, and relative altitude. Confirm it does not
+    repeat continuously. Treat this as an OpenEFB warning, not an ATC clearance.

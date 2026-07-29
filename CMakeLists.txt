@@ -125,6 +125,11 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
             "${CMAKE_SOURCE_DIR}/README.md" "${CMAKE_BINARY_DIR}/OpenEFB/README.md"
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
             "${CMAKE_SOURCE_DIR}/LICENSE" "${CMAKE_BINARY_DIR}/OpenEFB/LICENSE"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory
+            "${CMAKE_BINARY_DIR}/OpenEFB/resources/traffic"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/resources/traffic/generic_aircraft.obj"
+            "${CMAKE_BINARY_DIR}/OpenEFB/resources/traffic/generic_aircraft.obj"
         VERBATIM
     )
 
@@ -133,6 +138,8 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
         RUNTIME DESTINATION OpenEFB/64
     )
     install(FILES README.md LICENSE DESTINATION OpenEFB)
+    install(FILES resources/traffic/generic_aircraft.obj
+            DESTINATION OpenEFB/resources/traffic)
 else()
     message(STATUS "OPEN_EFB_XPLANE_SDK_PATH is not set; skipping the .xpl target")
 endif()

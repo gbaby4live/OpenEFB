@@ -261,3 +261,17 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
   expressed through texture coordinates so the page cannot cover the viewer
   chrome, while mouse-wheel input advances a bounded source-page offset and a
   scrollbar reports the current position.
+
+## Online traffic resilience
+
+- Live adsb.lol requests execute on the traffic worker and are bounded to the
+  persisted 25–200 NM user range. Returned positions are independently checked
+  against the selected radius before entering the traffic model.
+- Successful requests are spaced by at least 15 seconds. Failures back off to
+  15, 30, 60, then 120 seconds; HTTP 429 responses immediately use the maximum
+  interval to respect the provider's dynamic rate limits.
+- A failed refresh never clears a still-recent target set. The UI marks that set
+  degraded, expires it after 90 seconds, and then relies on simulator TCAS.
+- Route metadata is queued separately, deduplicated, cached per session, and
+  capped at eight pending callsigns so map interaction cannot create an
+  unbounded request backlog.

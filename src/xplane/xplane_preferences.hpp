@@ -13,6 +13,13 @@ struct DisplayPreferences {
     bool high_contrast{false};
     bool comfort_size{false};
     bool inject_traffic{false};
+    int traffic_range_nm{100};
+    bool show_3d_traffic{true};
+    bool show_map_aircraft_info{true};
+    bool show_map_route{true};
+    bool show_map_labels{true};
+    int map_marker_scale{100};
+    int route_line_width{7};
 };
 
 class XPlanePreferences final {

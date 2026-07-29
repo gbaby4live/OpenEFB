@@ -185,7 +185,11 @@ FlightPlanEditResult XPlaneFlightPlan::insert_after_active(FlightPlanLeg leg,
     std::vector<FlightPlanLeg> legs = route.available ? route.legs : std::vector<FlightPlanLeg>{};
     const int active = std::clamp(route.active_leg_index, -1,
                                   static_cast<int>(legs.size()) - 1);
-    const std::size_t insertion = static_cast<std::size_t>(active + 1);
+    // Keep the arrival as the final FMS entry. Map points always become
+    // enroute legs, even when X-Plane currently considers the arrival active.
+    const std::size_t insertion = legs.size() >= 2
+        ? std::min(static_cast<std::size_t>(active + 1), legs.size() - 1)
+        : static_cast<std::size_t>(active + 1);
     legs.insert(legs.begin() + static_cast<std::ptrdiff_t>(insertion), std::move(leg));
     auto result = apply_route(legs);
     if (!result.success) return result;
@@ -193,6 +197,37 @@ FlightPlanEditResult XPlaneFlightPlan::insert_after_active(FlightPlanLeg leg,
     XPLMSetDestinationFMSEntry(static_cast<int>(insertion));
     sample();
     result.message = "Added " + std::move(display_name) + " to the active X-Plane FMS route";
+    return result;
+}
+
+FlightPlanEditResult XPlaneFlightPlan::remove_route_leg(std::size_t index,
+                                                         std::string display_name) {
+    const auto route = model_.snapshot();
+    if (!route.available || index >= route.legs.size()) {
+        return {false, "The selected waypoint is no longer in the active route"};
+    }
+    if (index == 0 || index + 1 == route.legs.size()) {
+        return {false, "Departure and destination must be changed in Flight Plan"};
+    }
+
+    auto legs = route.legs;
+    const int previous_active = std::clamp(route.active_leg_index, 0,
+                                           static_cast<int>(legs.size()) - 1);
+    legs.erase(legs.begin() + static_cast<std::ptrdiff_t>(index));
+    auto result = apply_route(legs);
+    if (!result.success) return result;
+
+    // If the active leg was removed, the entry which followed it now occupies
+    // the same index. X-Plane therefore continues toward the next waypoint.
+    const int next_active = previous_active > static_cast<int>(index)
+        ? previous_active - 1 : std::min(previous_active, static_cast<int>(legs.size()) - 1);
+    if (!legs.empty()) {
+        XPLMSetDisplayedFMSEntry(next_active);
+        XPLMSetDestinationFMSEntry(next_active);
+    }
+    sample();
+    result.message = "Removed " + std::move(display_name) +
+                     "; route continues to the next waypoint";
     return result;
 }
 

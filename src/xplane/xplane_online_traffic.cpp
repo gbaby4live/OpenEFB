@@ -27,13 +27,18 @@ namespace {
 
 constexpr auto request_interval = std::chrono::seconds(15);
 constexpr auto stale_interval = std::chrono::seconds(90);
-constexpr int request_radius_nm = 100;
+constexpr auto maximum_retry_interval = std::chrono::seconds(120);
+constexpr int minimum_request_radius_nm = 25;
+constexpr int default_request_radius_nm = 100;
+constexpr int maximum_request_radius_nm = 200;
 constexpr double pi = 3.14159265358979323846;
+constexpr double maximum_prediction_seconds = 30.0;
 
 struct DownloadResult {
     bool success{false};
     std::string body;
     std::string status;
+    unsigned http_status{};
 };
 
 struct RouteInfo {
@@ -132,6 +137,33 @@ double distance_nm(double latitude_1, double longitude_1,
     return std::hypot(east, north);
 }
 
+void predict_target_position(TrafficTarget& target, double age_seconds) {
+    if (!valid_coordinate(target.latitude_degrees, target.longitude_degrees) ||
+        !std::isfinite(target.ground_speed_knots) ||
+        !std::isfinite(target.track_degrees)) return;
+
+    const double seconds = std::clamp(age_seconds, 0.0, maximum_prediction_seconds);
+    const double distance = std::max(0.0, target.ground_speed_knots) * seconds / 3600.0;
+    const double track_radians = target.track_degrees * pi / 180.0;
+    const double north_nm = std::cos(track_radians) * distance;
+    const double east_nm = std::sin(track_radians) * distance;
+    const double original_latitude = target.latitude_degrees;
+    target.latitude_degrees = std::clamp(original_latitude + north_nm / 60.0, -90.0, 90.0);
+
+    const double longitude_scale = std::max(
+        0.01,
+        std::abs(std::cos((original_latitude + target.latitude_degrees) * 0.5 * pi / 180.0)));
+    target.longitude_degrees += east_nm / (60.0 * longitude_scale);
+    while (target.longitude_degrees > 180.0) target.longitude_degrees -= 360.0;
+    while (target.longitude_degrees < -180.0) target.longitude_degrees += 360.0;
+
+    if (!target.on_ground && std::isfinite(target.vertical_speed_fpm)) {
+        target.altitude_feet = std::max(
+            0.0,
+            target.altitude_feet + target.vertical_speed_fpm * seconds / 60.0);
+    }
+}
+
 std::vector<std::string_view> aircraft_objects(std::string_view json) {
     std::vector<std::string_view> result;
     const auto ac = json.find("\"ac\"");
@@ -167,7 +199,8 @@ std::vector<std::string_view> aircraft_objects(std::string_view json) {
 
 std::vector<TrafficTarget> parse_aircraft(std::string_view json,
                                           double center_latitude,
-                                          double center_longitude) {
+                                          double center_longitude,
+                                          int radius_nm) {
     struct Candidate {
         TrafficTarget target;
         double distance{};
@@ -213,8 +246,10 @@ std::vector<TrafficTarget> parse_aircraft(std::string_view json,
         } else if (const auto geometric_rate = json_number(object, "geom_rate")) {
             target.vertical_speed_fpm = *geometric_rate;
         }
-        candidates.push_back({std::move(target), distance_nm(
-            center_latitude, center_longitude, *latitude, *longitude)});
+        const double target_distance = distance_nm(
+            center_latitude, center_longitude, *latitude, *longitude);
+        if (target_distance > static_cast<double>(radius_nm) + 1.0) continue;
+        candidates.push_back({std::move(target), target_distance});
     }
     std::ranges::sort(candidates, {}, &Candidate::distance);
     std::vector<TrafficTarget> result;
@@ -239,12 +274,12 @@ RouteInfo parse_route(std::string_view json) {
 }
 
 #if IBM
-DownloadResult download_aircraft(double latitude, double longitude) {
+DownloadResult download_aircraft(double latitude, double longitude, int radius_nm) {
     wchar_t path[160]{};
     swprintf_s(path, L"/v2/lat/%.5f/lon/%.5f/dist/%d",
-               latitude, longitude, request_radius_nm);
+        latitude, longitude, radius_nm);
     HINTERNET session = WinHttpOpen(
-        L"OpenEFB/1.0.0-rc23 (+https://github.com/Gbaby4live/OpenEFB)",
+        L"OpenEFB/1.0.0-rc28 (+https://github.com/Gbaby4live/OpenEFB)",
         WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) return {false, {}, "ADSB.LOL connection could not start"};
@@ -264,9 +299,12 @@ DownloadResult download_aircraft(double latitude, double longitude) {
         WinHttpReceiveResponse(request, nullptr)) {
         DWORD status{};
         DWORD status_size = sizeof(status);
-        if (WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-                                WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size,
-                                WINHTTP_NO_HEADER_INDEX) && status == 200) {
+        const bool has_status = WinHttpQueryHeaders(
+            request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+            WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size,
+            WINHTTP_NO_HEADER_INDEX) != FALSE;
+        result.http_status = status;
+        if (has_status && status == 200) {
             result.success = true;
             result.status = "ADSB.LOL ONLINE";
             for (;;) {
@@ -284,7 +322,7 @@ DownloadResult download_aircraft(double latitude, double longitude) {
                 }
                 result.body.resize(offset + read);
             }
-        } else if (status != 0) {
+        } else if (has_status && status != 0) {
             result.status = "ADSB.LOL HTTP " + std::to_string(status);
         }
     }
@@ -299,7 +337,7 @@ DownloadResult download_route(const std::string& callsign) {
     const std::string route_path = "/routes/" + callsign.substr(0, 2) + "/" + callsign + ".json";
     const std::wstring path(route_path.begin(), route_path.end());
     HINTERNET session = WinHttpOpen(
-        L"OpenEFB/1.0.0-rc25 (+https://github.com/Gbaby4live/OpenEFB)",
+        L"OpenEFB/1.0.0-rc28 (+https://github.com/Gbaby4live/OpenEFB)",
         WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) return {false, {}, "Route connection could not start"};
@@ -352,7 +390,7 @@ DownloadResult download_route(const std::string& callsign) {
     return result;
 }
 #else
-DownloadResult download_aircraft(double, double) {
+DownloadResult download_aircraft(double, double, int) {
     return {false, {}, "Online traffic is unavailable on this platform"};
 }
 DownloadResult download_route(const std::string&) {
@@ -385,17 +423,22 @@ public:
         route_cache_.clear();
         available_ = false;
         request_pending_ = false;
+        consecutive_failures_ = 0;
+        next_request_allowed_ = {};
     }
 
-    void request(double latitude, double longitude) {
+    void request(double latitude, double longitude, int radius_nm) {
         if (!valid_coordinate(latitude, longitude)) return;
         const auto now = std::chrono::steady_clock::now();
         std::lock_guard lock(mutex_);
-        if (!worker_.joinable() || request_pending_ ||
-            now - last_request_ < request_interval) return;
+        if (!worker_.joinable() || request_pending_ || now < next_request_allowed_) return;
         requested_latitude_ = latitude;
         requested_longitude_ = longitude;
-        last_request_ = now;
+        requested_radius_nm_ = std::clamp(
+            radius_nm,
+            minimum_request_radius_nm,
+            maximum_request_radius_nm);
+        next_request_allowed_ = now + request_interval;
         request_pending_ = true;
         condition_.notify_one();
     }
@@ -405,6 +448,7 @@ public:
         if (callsign.size() < 2) return;
         std::lock_guard lock(mutex_);
         if (!worker_.joinable() || route_cache_.contains(callsign) ||
+            route_requests_.size() >= 8 ||
             std::ranges::find(route_requests_, callsign) != route_requests_.end()) return;
         route_requests_.push_back(std::move(callsign));
         condition_.notify_one();
@@ -412,10 +456,14 @@ public:
 
     OnlineTrafficSnapshot snapshot() const {
         std::lock_guard lock(mutex_);
-        const bool fresh = available_ &&
-            std::chrono::steady_clock::now() - last_success_ <= stale_interval;
+        const auto now = std::chrono::steady_clock::now();
+        const auto observation_age = now - last_success_;
+        const bool fresh = available_ && observation_age <= stale_interval;
         auto targets = fresh ? targets_ : std::vector<TrafficTarget>{};
         for (auto& target : targets) {
+            predict_target_position(
+                target,
+                std::chrono::duration<double>(observation_age).count());
             const auto route = route_cache_.find(normalized_callsign(target.callsign));
             if (route == route_cache_.end()) continue;
             target.departure_airport = route->second.departure;
@@ -423,7 +471,7 @@ public:
             target.route_lookup_complete = route->second.complete;
             target.route_lookup_status = route->second.status;
         }
-        return {fresh, std::move(targets), status_};
+        return {fresh, std::move(targets), status_, fresh && consecutive_failures_ > 0};
     }
 
 private:
@@ -431,6 +479,7 @@ private:
         for (;;) {
             double latitude{};
             double longitude{};
+            int radius_nm{ default_request_radius_nm };
             std::string route_callsign;
             {
                 std::unique_lock lock(mutex_);
@@ -444,6 +493,7 @@ private:
                 } else {
                     latitude = requested_latitude_;
                     longitude = requested_longitude_;
+                    radius_nm = requested_radius_nm_;
                     request_pending_ = false;
                 }
             }
@@ -456,16 +506,26 @@ private:
                 route_cache_.insert_or_assign(std::move(route_callsign), std::move(route));
                 continue;
             }
-            auto response = download_aircraft(latitude, longitude);
+            auto response = download_aircraft(latitude, longitude, radius_nm);
             auto targets = response.success
-                ? parse_aircraft(response.body, latitude, longitude)
+                ? parse_aircraft(response.body, latitude, longitude, radius_nm)
                 : std::vector<TrafficTarget>{};
             std::lock_guard lock(mutex_);
-            status_ = std::move(response.status);
             if (response.success) {
+                status_ = "ADSB.LOL ONLINE / " + std::to_string(radius_nm) + " NM";
                 targets_ = std::move(targets);
                 available_ = true;
                 last_success_ = std::chrono::steady_clock::now();
+                consecutive_failures_ = 0;
+            } else {
+                ++consecutive_failures_;
+                const int exponent = std::min(3, consecutive_failures_ - 1);
+                auto delay = request_interval * (1 << exponent);
+                if (response.http_status == 429) delay = maximum_retry_interval;
+                delay = std::min(delay, maximum_retry_interval);
+                next_request_allowed_ = std::chrono::steady_clock::now() + delay;
+                status_ = std::move(response.status) + " / retry " +
+                          std::to_string(delay.count()) + "s";
             }
         }
     }
@@ -477,10 +537,12 @@ private:
     std::deque<std::string> route_requests_;
     std::map<std::string, RouteInfo> route_cache_;
     std::string status_{"ADSB.LOL starting"};
-    std::chrono::steady_clock::time_point last_request_{};
+    std::chrono::steady_clock::time_point next_request_allowed_{};
     std::chrono::steady_clock::time_point last_success_{};
     double requested_latitude_{};
     double requested_longitude_{};
+    int requested_radius_nm_{ default_request_radius_nm };
+    int consecutive_failures_{0};
     bool stopping_{false};
     bool request_pending_{false};
     bool available_{false};
@@ -491,8 +553,8 @@ XPlaneOnlineTraffic::XPlaneOnlineTraffic()
 XPlaneOnlineTraffic::~XPlaneOnlineTraffic() { stop(); }
 void XPlaneOnlineTraffic::start() { implementation_->start(); }
 void XPlaneOnlineTraffic::stop() { implementation_->stop(); }
-void XPlaneOnlineTraffic::request(double latitude, double longitude) {
-    implementation_->request(latitude, longitude);
+void XPlaneOnlineTraffic::request(double latitude, double longitude, int radius_nm) {
+    implementation_->request(latitude, longitude, radius_nm);
 }
 void XPlaneOnlineTraffic::request_route(std::string callsign) {
     implementation_->request_route(std::move(callsign));

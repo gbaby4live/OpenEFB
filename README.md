@@ -164,10 +164,14 @@ requests the true sub-1-NM tile scale instead of clamping airport views to a
 regional zoom, allowing Street tiles to reach zoom 19 and Topo tiles to reach
 zoom 17 without falsely enlarging a lower-detail image.
 The Traffic filter combines nearby X-Plane TCAS targets with live ADS-B traffic
-from the free and open [adsb.lol API](https://api.adsb.lol/). Online requests are
-limited to 100 NM around the aircraft, run off the simulator thread every 15
-seconds, reject stale positions, and fall back to TCAS when the network is not
-available. The map shows the active source and required adsb.lol ODbL
+from the free and open [adsb.lol API](https://api.adsb.lol/). Map Filters offers
+a persistent 25–200 NM online range in 25-NM steps. Requests run off the
+simulator thread no more often than every 15 seconds, reject stale or
+out-of-range positions, and fall back to TCAS when the network is unavailable.
+Provider failures use a bounded 15/30/60/120-second retry backoff. Recent online
+targets remain visibly marked as degraded for no more than 90 seconds, after
+which they are removed rather than presented as current. The filter shows the
+active source, retry health, configured range, and required adsb.lol ODbL
 attribution. Traffic is for simulator situational awareness only and must not be
 used for real-world separation or navigation.
 Settings includes an opt-in `Inject online traffic into X-Plane TCAS` control.
@@ -175,8 +179,8 @@ When enabled and online targets are available, OpenEFB requests exclusive
 multiplayer-aircraft access, publishes up to 63 nearby targets to compatible
 cockpit traffic displays, and refreshes the TCAS arrays every frame. OpenEFB
 does not take control when another provider owns traffic and releases control
-when another plugin requests it. This stage supplies TCAS awareness only; it
-does not create exterior 3D aircraft models.
+when another plugin requests it. Injection supplies cockpit TCAS awareness; it
+does not register synthetic flights with X-Plane's native ATC controller.
 Yellow traffic aircraft are selectable. Clicking one opens a compact opaque
 card with its published identity, altitude, speed, and, when available, its
 departure and destination. Route metadata is requested only for the selected
@@ -245,3 +249,27 @@ documents because no single worldwide source permits permanent offline caching.
 See [docs/architecture.md](docs/architecture.md) for architectural boundaries
 and threading invariants, and [docs/product-roadmap.md](docs/product-roadmap.md)
 for the MSFS 2024-style feature roadmap.
+
+RC27 adds reversible enroute waypoints, current/TAF weather modes, cockpit-matched
+indicated altitude and magnetic heading, native X-Plane traffic-advisory
+participation, responsive page scrolling, compact briefing controls, airport
+name/code map actions, and the refreshed premium cockpit palette.
+
+RC28 adds optional moving exterior traffic through X-Plane's supported instancing
+API, capped at 12 objects within 25 NM. It first uses a lightweight recognizable
+regional-jet model already installed with X-Plane and retains OpenEFB's original
+generic aircraft as a portable fallback; no X-Plane assets are redistributed.
+It also fixes compact aircraft-strip clipping, persists additional
+map and traffic settings, expands FAA airport identifier matching, ignores FAA
+deletion placeholders, and records actionable chart cycle and HTTP diagnostics.
+The exterior model is two-sided and carries navigation/strobe points for better
+visual acquisition. Its lightweight faceted fuselage makes nearby targets read
+as aircraft instead of flat symbols. Exterior models remain independent of TCAS
+ownership, so another cooperative traffic plugin can own cockpit TCAS without
+making OpenEFB's enabled exterior layer disappear. A saved Settings slider
+adjusts the magenta route from a 2-pixel fine line to a 12-pixel bold line.
+Nearby airborne traffic inside 3 NM and 1,200 feet also produces an OpenEFB
+clock-position, distance, and relative-altitude callout. X-Plane displays and
+speaks that callout according to the user's text-to-speech preferences. This is
+an EFB safety aid, not a native ATC instruction; equipped aircraft on X-Plane
+12.4.1 or newer can independently generate native TCAS TA/RA advisories.

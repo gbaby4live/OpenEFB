@@ -1,10 +1,18 @@
 #include "xplane_traffic.hpp"
 
+#include <XPLMGraphics.h>
+#include <XPLMPlugin.h>
+#include <XPLMUtilities.h>
+
 #include <algorithm>
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <limits>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -18,6 +26,9 @@ constexpr double meters_per_second_to_knots = 1.943844492;
 constexpr double feet_to_meters = 0.3048;
 constexpr double nautical_miles_to_meters = 1852.0;
 constexpr double pi = 3.14159265358979323846;
+constexpr double traffic_warning_range_nm = 3.0;
+constexpr double traffic_warning_vertical_feet = 1200.0;
+constexpr float traffic_warning_repeat_seconds = 45.0F;
 
 std::string packed_string(const std::array<char, target_count * text_width>& values, int index) {
     const auto start = values.data() + index * text_width;
@@ -63,7 +74,7 @@ bool XPlaneTraffic::start() {
     online_traffic_.start();
     XPLMCreateFlightLoop_t parameters{};
     parameters.structSize = sizeof(parameters);
-    parameters.phase = xplm_FlightLoop_Phase_AfterFlightModel;
+    parameters.phase = xplm_FlightLoop_Phase_BeforeFlightModel;
     parameters.callbackFunc = flight_loop;
     parameters.refcon = this;
     flight_loop_id_ = XPLMCreateFlightLoop(&parameters);
@@ -79,6 +90,7 @@ bool XPlaneTraffic::start() {
 }
 
 void XPlaneTraffic::stop() {
+    release_visual_traffic();
     if (owns_tcas_) release_tcas("Traffic adapter stopped");
     if (flight_loop_id_) {
         XPLMDestroyFlightLoop(flight_loop_id_);
@@ -89,6 +101,201 @@ void XPlaneTraffic::stop() {
     waiting_for_tcas_ = false;
     yielded_to_provider_ = false;
     model_.mark_unavailable();
+}
+
+bool XPlaneTraffic::load_visual_model() {
+    if (visual_object_) return true;
+    std::array<char, 1024> plugin_file{};
+    std::array<char, 1024> system_path{};
+    XPLMGetPluginInfo(XPLMGetMyID(), nullptr, plugin_file.data(), nullptr, nullptr);
+    XPLMGetSystemPath(system_path.data());
+    std::string load_path;
+    try {
+        const auto plugin_root = std::filesystem::path(plugin_file.data()).parent_path().parent_path();
+        const auto system_root = std::filesystem::path(system_path.data());
+        const std::array<std::pair<std::filesystem::path, const char*>, 2> candidates{{
+            {system_root / "Resources" / "default scenery" / "sim objects" /
+                 "apt_aircraft" / "jet" / "CRJ2_DAL" / "CRJ2_DAL_static.obj",
+             "X-Plane regional jet"},
+            {plugin_root / "resources" / "traffic" / "generic_aircraft.obj",
+             "OpenEFB lightweight fallback"},
+        }};
+        for (const auto& [object_path, description] : candidates) {
+            std::error_code error;
+            if (!std::filesystem::exists(object_path, error) || error) continue;
+            const auto relative = std::filesystem::relative(object_path, system_root, error);
+            if (error || relative.empty()) continue;
+            load_path = relative.generic_string();
+            const std::string loading = "[OpenEFB] Loading exterior traffic object: " +
+                                        load_path + "\n";
+            XPLMDebugString(loading.c_str());
+            visual_object_ = XPLMLoadObject(load_path.c_str());
+            if (visual_object_) {
+                visual_model_name_ = description;
+                break;
+            }
+        }
+    } catch (...) {
+        visual_object_ = nullptr;
+    }
+    if (!visual_object_) {
+        const std::string failure = "[OpenEFB] Exterior traffic object failed to load: " +
+                                    (load_path.empty() ? "unresolved path" : load_path) + "\n";
+        XPLMDebugString(failure.c_str());
+        model_.set_visual_traffic_state(false, "Generic 3D aircraft model could not be loaded");
+        return false;
+    }
+    const std::string success = "[OpenEFB] Exterior traffic object loaded successfully: " +
+                                visual_model_name_ + "\n";
+    XPLMDebugString(success.c_str());
+    return true;
+}
+
+void XPlaneTraffic::release_visual_traffic() {
+    for (auto instance : visual_instances_) {
+        if (instance) XPLMDestroyInstance(instance);
+    }
+    visual_instances_.clear();
+    if (visual_object_) {
+        XPLMUnloadObject(visual_object_);
+        visual_object_ = nullptr;
+    }
+    visual_model_name_.clear();
+    model_.set_visual_traffic_state(false,
+        model_.snapshot().visual_traffic_requested ? "Waiting for traffic injection" : "Disabled");
+}
+
+void XPlaneTraffic::update_visual_traffic(const std::vector<TrafficTarget>& targets) {
+    const auto& state = model_.snapshot();
+    if (!state.visual_traffic_requested || targets.empty()) {
+        release_visual_traffic();
+        return;
+    }
+    if (!load_visual_model()) return;
+
+    constexpr std::size_t maximum_visual_aircraft = 12;
+    constexpr double visual_range_nm = 25.0;
+    const auto& ownship = telemetry_model_.snapshot();
+    std::vector<const TrafficTarget*> visible;
+    visible.reserve(maximum_visual_aircraft);
+    double nearest_distance_nm = 10000.0;
+    for (const auto& target : targets) {
+        const auto [bearing, distance] = bearing_and_distance_nm(
+            ownship.latitude_degrees, ownship.longitude_degrees,
+            target.latitude_degrees, target.longitude_degrees);
+        static_cast<void>(bearing);
+        nearest_distance_nm = std::min(nearest_distance_nm, distance);
+        if (distance <= visual_range_nm && visible.size() < maximum_visual_aircraft)
+            visible.push_back(&target);
+    }
+
+    const char* datarefs[]{nullptr};
+    bool instance_creation_failed = false;
+    while (visual_instances_.size() < visible.size()) {
+        auto instance = XPLMCreateInstance(visual_object_, datarefs);
+        if (!instance) {
+            instance_creation_failed = true;
+            break;
+        }
+        visual_instances_.push_back(instance);
+    }
+    while (visual_instances_.size() > visible.size()) {
+        XPLMDestroyInstance(visual_instances_.back());
+        visual_instances_.pop_back();
+    }
+    const float unused_data{};
+    for (std::size_t index = 0; index < visual_instances_.size(); ++index) {
+        const auto& target = *visible[index];
+        double local_x{};
+        double local_y{};
+        double local_z{};
+        XPLMWorldToLocal(target.latitude_degrees, target.longitude_degrees,
+                         target.altitude_feet * feet_to_meters,
+                         &local_x, &local_y, &local_z);
+        const double horizontal_mps = std::max(1.0,
+            target.ground_speed_knots / meters_per_second_to_knots);
+        const double vertical_mps = target.vertical_speed_fpm * 0.00508;
+        XPLMDrawInfo_t position{};
+        position.structSize = sizeof(position);
+        position.x = static_cast<float>(local_x);
+        position.y = static_cast<float>(local_y);
+        position.z = static_cast<float>(local_z);
+        position.pitch = static_cast<float>(std::clamp(
+            std::atan2(vertical_mps, horizontal_mps) * 180.0 / pi, -20.0, 20.0));
+        position.heading = static_cast<float>(target.track_degrees);
+        position.roll = 0.0F;
+        XPLMInstanceSetPosition(visual_instances_[index], &position, &unused_data);
+    }
+    char nearest[24]{};
+    std::snprintf(nearest, sizeof(nearest), "%.1f NM", nearest_distance_nm);
+    model_.set_visual_traffic_state(!visual_instances_.empty(),
+        instance_creation_failed && visual_instances_.empty()
+            ? "X-Plane could not create the 3D traffic object instance"
+            : visual_instances_.empty()
+            ? "No 3D aircraft within 25 NM - nearest target " + std::string(nearest)
+            : "Active - " + std::to_string(visual_instances_.size()) +
+                  " moving 3D aircraft (" + visual_model_name_ + ") - nearest " + nearest);
+}
+
+void XPlaneTraffic::update_traffic_warning(const std::vector<TrafficTarget>& targets,
+                                           float elapsed_seconds) {
+    warning_cooldown_seconds_ = std::max(0.0F, warning_cooldown_seconds_ -
+                                               std::max(0.0F, elapsed_seconds));
+    const auto& ownship = telemetry_model_.snapshot();
+    if (!ownship.available || targets.empty()) {
+        active_warning_target_.clear();
+        return;
+    }
+
+    const double own_altitude = ownship.geometric_altitude_feet != 0.0
+        ? ownship.geometric_altitude_feet : ownship.altitude_feet;
+    const TrafficTarget* threat = nullptr;
+    double threat_bearing = 0.0;
+    double threat_distance = std::numeric_limits<double>::max();
+    double threat_altitude_delta = 0.0;
+    for (const auto& target : targets) {
+        if (target.on_ground) continue;
+        const auto [bearing, distance] = bearing_and_distance_nm(
+            ownship.latitude_degrees, ownship.longitude_degrees,
+            target.latitude_degrees, target.longitude_degrees);
+        const double altitude_delta = target.altitude_feet - own_altitude;
+        if (distance > traffic_warning_range_nm ||
+            std::abs(altitude_delta) > traffic_warning_vertical_feet ||
+            distance >= threat_distance) continue;
+        threat = &target;
+        threat_bearing = bearing;
+        threat_distance = distance;
+        threat_altitude_delta = altitude_delta;
+    }
+    if (!threat) {
+        active_warning_target_.clear();
+        return;
+    }
+
+    const std::string threat_key = threat->mode_s_id != 0
+        ? std::to_string(threat->mode_s_id) : threat->callsign;
+    if (threat_key == active_warning_target_ && warning_cooldown_seconds_ > 0.0F) return;
+
+    double relative_bearing = threat_bearing -
+        (ownship.true_heading_degrees != 0.0
+             ? ownship.true_heading_degrees : ownship.heading_degrees);
+    while (relative_bearing < 0.0) relative_bearing += 360.0;
+    while (relative_bearing >= 360.0) relative_bearing -= 360.0;
+    int clock_position = static_cast<int>(std::lround(relative_bearing / 30.0));
+    if (clock_position == 0) clock_position = 12;
+    const int rounded_distance = std::max(1, static_cast<int>(std::lround(threat_distance)));
+    const int rounded_vertical = static_cast<int>(
+        std::lround(std::abs(threat_altitude_delta) / 100.0) * 100.0);
+
+    std::ostringstream message;
+    message << "Open E F B traffic, " << clock_position << " o'clock, "
+            << rounded_distance << (rounded_distance == 1 ? " mile, " : " miles, ");
+    if (rounded_vertical < 100) message << "same altitude";
+    else message << rounded_vertical << " feet "
+                 << (threat_altitude_delta > 0.0 ? "above" : "below");
+    XPLMSpeakString(message.str().c_str());
+    active_warning_target_ = threat_key;
+    warning_cooldown_seconds_ = traffic_warning_repeat_seconds;
 }
 
 bool XPlaneTraffic::find_datarefs() {
@@ -180,7 +387,10 @@ void XPlaneTraffic::sample() {
     const std::size_t simulator_count = targets.size();
     const auto& telemetry = telemetry_model_.snapshot();
     if (telemetry.available) {
-        online_traffic_.request(telemetry.latitude_degrees, telemetry.longitude_degrees);
+        online_traffic_.request(
+            telemetry.latitude_degrees,
+            telemetry.longitude_degrees,
+            model_.snapshot().online_range_nm);
     }
     auto online = online_traffic_.snapshot();
     std::vector<TrafficTarget> combined;
@@ -202,7 +412,7 @@ void XPlaneTraffic::sample() {
     else if (simulator_count == 0) status += " / TCAS 0";
     else status += " / TCAS " + std::to_string(simulator_count);
     model_.update(std::move(combined), source, simulator_count, online_count,
-                  std::move(status));
+                  std::move(status), online.degraded);
 }
 
 void XPlaneTraffic::publish_injection_state(bool active, std::string status) {
@@ -252,6 +462,14 @@ void XPlaneTraffic::planes_available(void* refcon) {
 
 void XPlaneTraffic::update_injection() {
     const auto& state = model_.snapshot();
+    const auto online = online_traffic_.snapshot();
+    const auto& ownship = telemetry_model_.snapshot();
+    update_traffic_warning(online.targets, 0.0F);
+    if (online.available && !online.targets.empty() && ownship.available)
+        update_visual_traffic(online.targets);
+    else
+        update_visual_traffic({});
+
     if (!state.injection_requested) {
         yielded_to_provider_ = false;
         if (owns_tcas_) release_tcas("Disabled");
@@ -266,8 +484,6 @@ void XPlaneTraffic::update_injection() {
         publish_injection_state(false, "Yielded to another traffic plugin - turn off/on to retry");
         return;
     }
-    const auto online = online_traffic_.snapshot();
-    const auto& ownship = telemetry_model_.snapshot();
     if (!online.available || online.targets.empty() || !ownship.available) {
         if (owns_tcas_) release_tcas("Waiting for online traffic");
         else publish_injection_state(false, "Waiting for online traffic");
@@ -292,16 +508,22 @@ void XPlaneTraffic::update_injection() {
         const auto [true_bearing, distance_nm] = bearing_and_distance_nm(
             ownship.latitude_degrees, ownship.longitude_degrees,
             target.latitude_degrees, target.longitude_degrees);
-        double relative_bearing = true_bearing - ownship.heading_degrees;
+        const double ownship_true_heading = ownship.true_heading_degrees != 0.0
+            ? ownship.true_heading_degrees : ownship.heading_degrees;
+        double relative_bearing = true_bearing - ownship_true_heading;
         while (relative_bearing > 180.0) relative_bearing -= 360.0;
         while (relative_bearing < -180.0) relative_bearing += 360.0;
         ids[slot] = static_cast<int>(target.mode_s_id != 0
             ? target.mode_s_id : 0xE00000U + static_cast<std::uint32_t>(slot));
-        transponder_modes[slot] = target.on_ground ? 5 : 3;
+        // Mode 7 allows X-Plane 12.4.1+ to generate native TA/RA advisories
+        // when the user's aircraft is equipped for them. Ground targets use
+        // the documented ground-surveillance mode.
+        transponder_modes[slot] = target.on_ground ? 5 : 7;
         bearings[slot] = static_cast<float>(relative_bearing);
         distances[slot] = static_cast<float>(distance_nm * nautical_miles_to_meters);
         altitudes[slot] = static_cast<float>(
-            (target.altitude_feet - ownship.altitude_feet) * feet_to_meters);
+            (target.altitude_feet - (ownship.geometric_altitude_feet != 0.0
+                ? ownship.geometric_altitude_feet : ownship.altitude_feet)) * feet_to_meters);
         headings[slot] = static_cast<float>(target.track_degrees);
         vertical_speeds[slot] = static_cast<float>(target.vertical_speed_fpm);
         pack_text(callsigns, slot, target.callsign);
@@ -320,12 +542,15 @@ void XPlaneTraffic::update_injection() {
     XPLMSetDatab(aircraft_type_, aircraft_types.data() + text_width, text_width,
                  count * text_width);
     publish_injection_state(true, "Active - " + std::to_string(count) +
-                                  " online targets in X-Plane TCAS");
+                                  " targets available to cockpit TCAS");
 }
 
 float XPlaneTraffic::flight_loop(float elapsed_since_last_call, float, int, void* refcon) {
     auto* traffic = static_cast<XPlaneTraffic*>(refcon);
     if (!traffic) return 0.0F;
+    traffic->warning_cooldown_seconds_ = std::max(
+        0.0F, traffic->warning_cooldown_seconds_ -
+                  std::max(0.0F, elapsed_since_last_call));
     traffic->sample_elapsed_seconds_ += std::max(0.0F, elapsed_since_last_call);
     if (traffic->sample_elapsed_seconds_ >= sample_interval_seconds) {
         traffic->sample_elapsed_seconds_ = 0.0F;

@@ -11,8 +11,10 @@ struct TelemetrySnapshot {
     double latitude_degrees{};
     double longitude_degrees{};
     double altitude_feet{};
+    double geometric_altitude_feet{};
     double ground_speed_knots{};
     double heading_degrees{};
+    double true_heading_degrees{};
     double vertical_speed_fpm{};
     std::uint64_t revision{};
 };

@@ -88,6 +88,10 @@ struct PluginRuntime {
           }),
           menu([this] { toggle_window(); }) {
         briefing_model.set_notes(preferences.load_briefing_notes());
+        const auto display_preferences = preferences.load_display_preferences();
+        traffic_model.set_online_range_nm(display_preferences.traffic_range_nm);
+        traffic_model.set_injection_requested(display_preferences.inject_traffic);
+        traffic_model.set_visual_traffic_requested(display_preferences.show_3d_traffic);
     }
 
     static void xplane_log(std::string_view message) {

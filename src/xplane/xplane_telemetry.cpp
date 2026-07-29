@@ -74,8 +74,12 @@ bool XPlaneTelemetry::find_datarefs() {
     latitude_ = XPLMFindDataRef("sim/flightmodel/position/latitude");
     longitude_ = XPLMFindDataRef("sim/flightmodel/position/longitude");
     elevation_ = XPLMFindDataRef("sim/flightmodel/position/elevation");
+    indicated_altitude_ = XPLMFindDataRef(
+        "sim/cockpit2/gauges/indicators/altitude_ft_pilot");
     ground_speed_ = XPLMFindDataRef("sim/flightmodel/position/groundspeed");
     heading_ = XPLMFindDataRef("sim/flightmodel/position/true_psi");
+    magnetic_heading_ = XPLMFindDataRef(
+        "sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot");
     vertical_speed_ = XPLMFindDataRef("sim/flightmodel/position/local_vy");
     aircraft_name_ = XPLMFindDataRef("sim/aircraft/view/acf_descrip");
     return latitude_ && longitude_ && elevation_ && ground_speed_ && heading_ && vertical_speed_;
@@ -85,9 +89,13 @@ void XPlaneTelemetry::sample() {
     TelemetrySnapshot snapshot;
     snapshot.latitude_degrees = XPLMGetDatad(latitude_);
     snapshot.longitude_degrees = XPLMGetDatad(longitude_);
-    snapshot.altitude_feet = XPLMGetDatad(elevation_) * meters_to_feet;
+    snapshot.geometric_altitude_feet = XPLMGetDatad(elevation_) * meters_to_feet;
+    snapshot.altitude_feet = indicated_altitude_
+        ? XPLMGetDataf(indicated_altitude_) : snapshot.geometric_altitude_feet;
     snapshot.ground_speed_knots = XPLMGetDataf(ground_speed_) * meters_per_second_to_knots;
-    snapshot.heading_degrees = XPLMGetDataf(heading_);
+    snapshot.true_heading_degrees = XPLMGetDataf(heading_);
+    snapshot.heading_degrees = magnetic_heading_
+        ? XPLMGetDataf(magnetic_heading_) : snapshot.true_heading_degrees;
     snapshot.vertical_speed_fpm = XPLMGetDataf(vertical_speed_) * meters_per_second_to_feet_per_minute;
     snapshot.aircraft_name = aircraft_name_value_;
     model_.update(std::move(snapshot));
