@@ -186,3 +186,22 @@ failed step. Map/PDF visibility failures are release blockers, not optional poli
    map, remains readable, and does not become transparent.
 7. Disconnect the network and confirm traffic inspection remains safe: live
    altitude/speed still display while unavailable route data is not guessed.
+
+# RC26 traffic range and provider resilience
+
+1. Open Home > Filter and scroll to `ONLINE RANGE`. Use `-` and `+` to verify
+   the value moves in 25-NM steps and remains bounded between 25 and 200 NM.
+2. Select 25 NM, restart X-Plane, and confirm the saved range returns. Repeat at
+   100 NM before continuing normal testing.
+3. With internet access, confirm the Source row reports `ADSB.LOL ONLINE` and
+   the configured radius while the Traffic row reports ONLINE or ONLINE+TCAS.
+4. Disconnect the network. Confirm the filter reports a retry/degraded state,
+   retains only the recent online picture temporarily, and does not freeze the
+   simulator.
+5. Keep the network disconnected for longer than 90 seconds. Confirm stale
+   online aircraft disappear and available X-Plane TCAS traffic remains.
+6. Reconnect the network and allow the displayed retry interval to elapse.
+   Confirm ONLINE service and normal 15-second refresh recover automatically.
+7. Rapidly open and close several traffic cards and change range repeatedly.
+   Confirm requests remain bounded, the UI stays responsive, and TCAS ownership
+   behavior from RC24 remains unchanged.

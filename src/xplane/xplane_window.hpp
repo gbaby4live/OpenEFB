@@ -122,6 +122,7 @@ private:
     void toggle_high_contrast();
     void toggle_comfort_size();
     void toggle_traffic_injection();
+    void adjust_traffic_range(int direction);
     void resize_interface(double factor);
     void handle_editor_key(char key, char virtual_key);
     void handle_airport_key(char key, char virtual_key);

@@ -2,6 +2,7 @@
 
 #include <XPLMUtilities.h>
 
+#include <algorithm>
 #include <array>
 #include <fstream>
 #include <string>
@@ -29,14 +30,18 @@ DisplayPreferences XPlanePreferences::load_display_preferences() const {
         int high_contrast{};
         int comfort_size{};
         int inject_traffic{};
+        int traffic_range_nm{100};
         int legacy_night_mode{};
         if (input >> signature >> version && signature == "OpenEFBDisplay" &&
             ((version == 1 && (input >> high_contrast >> comfort_size)) ||
              (version == 2 && (input >> legacy_night_mode >> high_contrast >> comfort_size)) ||
-             (version == 3 && (input >> high_contrast >> comfort_size >> inject_traffic)))) {
+             (version == 3 && (input >> high_contrast >> comfort_size >> inject_traffic)) ||
+             (version == 4 && (input >> high_contrast >> comfort_size >> inject_traffic >>
+                                      traffic_range_nm)))) {
             preferences.high_contrast = high_contrast != 0;
             preferences.comfort_size = comfort_size != 0;
             preferences.inject_traffic = inject_traffic != 0;
+            preferences.traffic_range_nm = std::clamp(traffic_range_nm, 25, 200);
         }
     } catch (...) {
     }
@@ -47,9 +52,10 @@ void XPlanePreferences::save_display_preferences(const DisplayPreferences& prefe
     try {
         std::filesystem::create_directories(display_path_.parent_path());
         std::ofstream output(display_path_, std::ios::trunc);
-        output << "OpenEFBDisplay 3\n" << (preferences.high_contrast ? 1 : 0) << ' '
+        output << "OpenEFBDisplay 4\n" << (preferences.high_contrast ? 1 : 0) << ' '
                << (preferences.comfort_size ? 1 : 0) << ' '
-               << (preferences.inject_traffic ? 1 : 0) << '\n';
+               << (preferences.inject_traffic ? 1 : 0) << ' '
+               << std::clamp(preferences.traffic_range_nm, 25, 200) << '\n';
     } catch (...) {
     }
 }

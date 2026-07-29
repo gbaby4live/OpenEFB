@@ -180,7 +180,10 @@ void XPlaneTraffic::sample() {
     const std::size_t simulator_count = targets.size();
     const auto& telemetry = telemetry_model_.snapshot();
     if (telemetry.available) {
-        online_traffic_.request(telemetry.latitude_degrees, telemetry.longitude_degrees);
+        online_traffic_.request(
+            telemetry.latitude_degrees,
+            telemetry.longitude_degrees,
+            model_.snapshot().online_range_nm);
     }
     auto online = online_traffic_.snapshot();
     std::vector<TrafficTarget> combined;
@@ -202,7 +205,7 @@ void XPlaneTraffic::sample() {
     else if (simulator_count == 0) status += " / TCAS 0";
     else status += " / TCAS " + std::to_string(simulator_count);
     model_.update(std::move(combined), source, simulator_count, online_count,
-                  std::move(status));
+                  std::move(status), online.degraded);
 }
 
 void XPlaneTraffic::publish_injection_state(bool active, std::string status) {

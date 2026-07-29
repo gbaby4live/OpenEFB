@@ -554,13 +554,22 @@ int main() {
     traffic_model.update({
         {0xABC123, "TEST123", "B738", 47.5, -122.3, 6000.0, 180.0, 220.0, 500.0, false},
         {0xBAD001, "INVALID", "C172", 120.0, 0.0, 1000.0, 0.0, 0.0, 0.0, false},
-    }, openefb::TrafficSource::blended, 1, 1, "ADSB.LOL ONLINE / TCAS 1");
+    }, openefb::TrafficSource::blended, 1, 1,
+       "ADSB.LOL request failed / retry 15s / TCAS 1", true);
     require(traffic_model.snapshot().available &&
                 traffic_model.snapshot().targets.size() == 1 &&
                 traffic_model.snapshot().targets.front().callsign == "TEST123" &&
                 traffic_model.snapshot().source == openefb::TrafficSource::blended &&
-                traffic_model.snapshot().online_target_count == 1,
+                traffic_model.snapshot().online_target_count == 1 &&
+                traffic_model.snapshot().online_degraded,
             "traffic model publishes source-aware targets and rejects invalid coordinates");
+    traffic_model.set_online_range_nm(10);
+    require(traffic_model.snapshot().online_range_nm == 25,
+            "traffic range clamps to the provider-safe minimum");
+    traffic_model.set_online_range_nm(500);
+    require(traffic_model.snapshot().online_range_nm == 200,
+            "traffic range clamps to the provider-safe maximum");
+    traffic_model.set_online_range_nm(100);
     const auto route_revision = traffic_model.snapshot().route_request_revision;
     traffic_model.request_route_lookup("TEST123");
     require(traffic_model.snapshot().route_request_callsign == "TEST123" &&
@@ -577,7 +586,8 @@ int main() {
                 !traffic_model.snapshot().injection_active,
             "disabling traffic injection clears the active state");
     traffic_model.mark_unavailable();
-    require(!traffic_model.snapshot().available && traffic_model.snapshot().targets.empty(),
+    require(!traffic_model.snapshot().available && traffic_model.snapshot().targets.empty() &&
+                !traffic_model.snapshot().online_degraded,
             "traffic model clears stale targets when the simulator source stops");
 
     openefb::FlightPlanSnapshot log_route;

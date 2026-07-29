@@ -1023,8 +1023,9 @@ struct MapFilterGeometry {
     int max_scroll{};
 };
 
+constexpr int map_filter_content_slots = 13;
+
 MapFilterGeometry map_filter_geometry(int map_left, int map_top, int map_right, int map_bottom) {
-    constexpr int content_slots = 11;
     constexpr int step = 25;
     const int right = map_right - 58;
     const int left = std::max(map_left + 10, right - 214);
@@ -1032,9 +1033,9 @@ MapFilterGeometry map_filter_geometry(int map_left, int map_top, int map_right, 
     const int bottom = std::max(map_bottom + 8, map_top - 331);
     const int first_row_top = map_top - 48;
     const int visible_slots = std::max(
-        1, std::min(content_slots, (first_row_top - bottom + 8) / step));
+        1, std::min(map_filter_content_slots, (first_row_top - bottom + 8) / step));
     return {left, top, right, bottom, first_row_top, visible_slots,
-            std::max(0, content_slots - visible_slots)};
+            std::max(0, map_filter_content_slots - visible_slots)};
 }
 
 void draw_filter_row(int left, int top, int right, std::string_view label, bool enabled) {
@@ -1493,9 +1494,13 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
         draw_row(5, "Airports", map.layer_enabled(MapLayer::airports));
         draw_row(6, "Navaids", map.layer_enabled(MapLayer::navaids));
         draw_row(7, "Airspace", map.layer_enabled(MapLayer::airspace));
-        const std::string traffic_source = traffic.source == TrafficSource::online ? "ONLINE" :
-            traffic.source == TrafficSource::blended ? "ONLINE+TCAS" :
-            traffic.source == TrafficSource::simulator ? "TCAS" : "WAIT";
+        const std::string traffic_source = traffic.source == TrafficSource::online
+            ? (traffic.online_degraded ? "DEGRADED" : "ONLINE") :
+            traffic.source == TrafficSource::blended
+            ? (traffic.online_degraded ? "DEGRADED+TCAS" : "ONLINE+TCAS") :
+            traffic.source == TrafficSource::simulator
+            ? (traffic.status.find("retry") != std::string::npos ? "TCAS / RETRY" : "TCAS")
+            : "WAIT";
         const std::string traffic_label = "Traffic  " +
             std::to_string(traffic.targets.size()) + " / " + traffic_source;
         draw_row(8, traffic_label, map.layer_enabled(MapLayer::traffic));
@@ -1510,11 +1515,35 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
             draw_button(filters.right - 38, size_top - 1,
                         filters.right - 12, size_top - 23, "+");
         }
+        const int range_top = filters.first_row_top + effective_scroll * step - 11 * step;
+        if (visible_row(range_top)) {
+            draw_rectangle(filters.left + 8, range_top, filters.right - 8,
+                           range_top - 24, card);
+            draw_text(filters.left + 16, range_top - 17,
+                      "ONLINE RANGE  " + std::to_string(traffic.online_range_nm) + " NM",
+                      text_primary);
+            draw_button(filters.right - 68, range_top - 1,
+                        filters.right - 42, range_top - 23, "-");
+            draw_button(filters.right - 38, range_top - 1,
+                        filters.right - 12, range_top - 23, "+");
+        }
+        const int provider_top = filters.first_row_top + effective_scroll * step - 12 * step;
+        if (visible_row(provider_top)) {
+            draw_rectangle(filters.left + 8, provider_top, filters.right - 8,
+                           provider_top - 24,
+                           traffic.online_degraded
+                               ? Color{0.30F, 0.19F, 0.035F, 1.0F}
+                               : Color{0.070F, 0.080F, 0.085F, 1.0F});
+            draw_text(filters.left + 16, provider_top - 17,
+                      shortened("SOURCE  " + traffic.status, 27),
+                      traffic.online_degraded ? hover_accent : text_muted);
+        }
         if (filters.max_scroll > 0) {
             const int track_top = filters.top - 38;
             const int track_bottom = filters.bottom + 8;
             const int thumb_height = std::max(
-                22, (track_top - track_bottom) * filters.visible_slots / 11);
+                22, (track_top - track_bottom) * filters.visible_slots /
+                        map_filter_content_slots);
             const int travel = std::max(0, track_top - track_bottom - thumb_height);
             const int thumb_top = track_top -
                 (filters.max_scroll == 0 ? 0 : travel * effective_scroll / filters.max_scroll);
@@ -1992,7 +2021,8 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         draw_text(left, top - 28, "Saved simulator, display, and accessibility preferences.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
                   "Inject online traffic into X-Plane TCAS",
-                  shortened(traffic.injection_status, 56));
+                  shortened(traffic.injection_status + "  |  online " +
+                                std::to_string(traffic.online_range_nm) + " NM", 56));
         draw_button(card_right - 122, top - 91, card_right - 18, top - 124,
                     display_preferences.inject_traffic ? "Disable" : "Enable", true);
         draw_card(left, top - 178, card_right, top - 274, "High contrast text",
@@ -2011,9 +2041,9 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         draw_text(left, top, "About OpenEFB", text_primary, xplmFont_Proportional);
         draw_text(left, top - 28, "An open-source electronic flight bag for X-Plane 12.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Version", "OPEN EFB / 1.0 RC25");
+                  "Version", "OPEN EFB / 1.0 RC26");
         draw_card(left, top - 178, card_right, top - 274,
-                  "Release", "Online ADS-B map traffic with optional X-Plane TCAS injection");
+                  "Release", "Resilient online traffic with configurable range and TCAS injection");
         draw_card(left, top - 294, card_right, top - 390,
                   "Project", "Built in the open for the flight-sim community");
         break;
@@ -2087,6 +2117,7 @@ XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
       preferences_(preferences), map_tiles_(preferences.map_cache_directory()) {
     display_preferences_ = preferences_.load_display_preferences();
     traffic_model_.set_injection_requested(display_preferences_.inject_traffic);
+    traffic_model_.set_online_range_nm(display_preferences_.traffic_range_nm);
     high_contrast_mode = display_preferences_.high_contrast;
     WindowGeometry geometry;
     if (const auto stored = preferences_.load_geometry()) {
@@ -2489,6 +2520,14 @@ void XPlaneWindow::toggle_comfort_size() {
 void XPlaneWindow::toggle_traffic_injection() {
     display_preferences_.inject_traffic = !display_preferences_.inject_traffic;
     traffic_model_.set_injection_requested(display_preferences_.inject_traffic);
+    preferences_.save_display_preferences(display_preferences_);
+}
+
+void XPlaneWindow::adjust_traffic_range(int direction) {
+    if (direction == 0) return;
+    display_preferences_.traffic_range_nm = std::clamp(
+        display_preferences_.traffic_range_nm + (direction > 0 ? 25 : -25), 25, 200);
+    traffic_model_.set_online_range_nm(display_preferences_.traffic_range_nm);
     preferences_.save_display_preferences(display_preferences_);
 }
 
@@ -3041,6 +3080,20 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
                     }
                     if (x >= filters.right - 38 && x <= filters.right - 12) {
                         window->map_marker_scale_ = std::min(150, window->map_marker_scale_ + 25);
+                        return 1;
+                    }
+                }
+                const int range_top = filters.first_row_top +
+                    window->map_filter_scroll_ * step - 11 * step;
+                if (range_top <= filters.first_row_top + 1 &&
+                    range_top - 22 >= filters.bottom + 6 &&
+                    y <= range_top && y >= range_top - 24) {
+                    if (x >= filters.right - 68 && x <= filters.right - 42) {
+                        window->adjust_traffic_range(-1);
+                        return 1;
+                    }
+                    if (x >= filters.right - 38 && x <= filters.right - 12) {
+                        window->adjust_traffic_range(1);
                         return 1;
                     }
                 }

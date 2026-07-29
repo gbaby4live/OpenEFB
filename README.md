@@ -164,10 +164,14 @@ requests the true sub-1-NM tile scale instead of clamping airport views to a
 regional zoom, allowing Street tiles to reach zoom 19 and Topo tiles to reach
 zoom 17 without falsely enlarging a lower-detail image.
 The Traffic filter combines nearby X-Plane TCAS targets with live ADS-B traffic
-from the free and open [adsb.lol API](https://api.adsb.lol/). Online requests are
-limited to 100 NM around the aircraft, run off the simulator thread every 15
-seconds, reject stale positions, and fall back to TCAS when the network is not
-available. The map shows the active source and required adsb.lol ODbL
+from the free and open [adsb.lol API](https://api.adsb.lol/). Map Filters offers
+a persistent 25–200 NM online range in 25-NM steps. Requests run off the
+simulator thread no more often than every 15 seconds, reject stale or
+out-of-range positions, and fall back to TCAS when the network is unavailable.
+Provider failures use a bounded 15/30/60/120-second retry backoff. Recent online
+targets remain visibly marked as degraded for no more than 90 seconds, after
+which they are removed rather than presented as current. The filter shows the
+active source, retry health, configured range, and required adsb.lol ODbL
 attribution. Traffic is for simulator situational awareness only and must not be
 used for real-world separation or navigation.
 Settings includes an opt-in `Inject online traffic into X-Plane TCAS` control.

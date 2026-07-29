@@ -17,7 +17,8 @@ bool valid_target(const TrafficTarget& target) {
 
 void TrafficModel::update(std::vector<TrafficTarget> targets, TrafficSource source,
                           std::size_t simulator_target_count,
-                          std::size_t online_target_count, std::string status) {
+                          std::size_t online_target_count, std::string status,
+                          bool online_degraded) {
     std::erase_if(targets, [](const TrafficTarget& target) { return !valid_target(target); });
     if (targets.size() > 63) targets.resize(63);
     snapshot_.available = true;
@@ -26,6 +27,7 @@ void TrafficModel::update(std::vector<TrafficTarget> targets, TrafficSource sour
     snapshot_.simulator_target_count = simulator_target_count;
     snapshot_.online_target_count = online_target_count;
     snapshot_.status = std::move(status);
+    snapshot_.online_degraded = online_degraded;
     snapshot_.revision = next_revision_++;
 }
 
@@ -36,6 +38,7 @@ void TrafficModel::mark_unavailable() noexcept {
     snapshot_.simulator_target_count = 0;
     snapshot_.online_target_count = 0;
     snapshot_.status.clear();
+    snapshot_.online_degraded = false;
     snapshot_.injection_active = false;
     snapshot_.injection_status = snapshot_.injection_requested ? "Waiting for traffic adapter"
                                                                : "Disabled";
@@ -63,6 +66,13 @@ void TrafficModel::request_route_lookup(std::string callsign) {
     if (callsign.empty()) return;
     snapshot_.route_request_callsign = std::move(callsign);
     ++snapshot_.route_request_revision;
+    snapshot_.revision = next_revision_++;
+}
+
+void TrafficModel::set_online_range_nm(int range_nm) noexcept {
+    const int clamped = std::clamp(range_nm, 25, 200);
+    if (snapshot_.online_range_nm == clamped) return;
+    snapshot_.online_range_nm = clamped;
     snapshot_.revision = next_revision_++;
 }
 

@@ -13,6 +13,7 @@ struct DisplayPreferences {
     bool high_contrast{false};
     bool comfort_size{false};
     bool inject_traffic{false};
+    int traffic_range_nm{100};
 };
 
 class XPlanePreferences final {

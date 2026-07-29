@@ -96,11 +96,14 @@ original open-source code and visuals.
   aircraft identity, altitude and speed, same-target click-to-close behavior,
   and cached on-demand departure/destination lookup from the CC0 adsb.lol VRS
   standing-data set without linking inspection to any FMS action
+- RC26: persistent 25–200 NM online traffic range controls, response-side
+  distance enforcement, visible provider health, bounded exponential retry
+  backoff, 90-second degraded-cache expiry, and automatic TCAS fallback
 
 ## Planned operational workflow
 
-- Provider resilience, user-configurable traffic range, and final traffic
-  acceptance testing across areas with different ADS-B receiver coverage
+- Final traffic acceptance testing across areas with different ADS-B receiver
+  coverage
 - Cross-platform packaging, signed release artifacts, and final simulator validation
 
 ## Release hardening blockers
