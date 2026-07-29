@@ -32,8 +32,10 @@ private:
     XPLMDataRef latitude_{nullptr};
     XPLMDataRef longitude_{nullptr};
     XPLMDataRef elevation_{nullptr};
+    XPLMDataRef indicated_altitude_{nullptr};
     XPLMDataRef ground_speed_{nullptr};
     XPLMDataRef heading_{nullptr};
+    XPLMDataRef magnetic_heading_{nullptr};
     XPLMDataRef vertical_speed_{nullptr};
     XPLMDataRef aircraft_name_{nullptr};
     std::string aircraft_name_value_{"Unknown aircraft"};

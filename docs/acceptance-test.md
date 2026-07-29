@@ -205,3 +205,20 @@ failed step. Map/PDF visibility failures are release blockers, not optional poli
 7. Rapidly open and close several traffic cards and change range repeatedly.
    Confirm requests remain bounded, the UI stays responsive, and TCAS ownership
    behavior from RC24 remains unchanged.
+
+# RC27 route, forecast, traffic-alert, and responsive UI
+
+1. Add two map coordinates. Confirm both stay before the destination and the
+   X-Plane FMS advances through them in order.
+2. Select an added waypoint again, choose Remove, and confirm navigation
+   continues to the next waypoint. Confirm route endpoints show `ROUTE END`.
+3. Select an airport marker and confirm its code and full name appear.
+4. Switch Weather between CURRENT and FORECAST. Confirm the view visibly changes
+   between current METAR and the published TAF, with separate source labels.
+5. Compare `ALT IND` and `HDG MAG` with the pilot cockpit instruments.
+6. On X-Plane 12.4.1 or newer with an equipped aircraft, enable injection and
+   confirm nearby Mode 7 targets can generate native TCAS traffic advisories.
+7. Resize OpenEFB to minimum height and mouse-wheel every non-map page. Confirm
+   hidden content is reachable, remains clipped inside the EFB, and does not overlap.
+8. Confirm compact Briefing Library controls reflow into two rows and chart
+   availability text remains readable.

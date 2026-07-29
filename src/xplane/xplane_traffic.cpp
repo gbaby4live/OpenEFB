@@ -295,16 +295,22 @@ void XPlaneTraffic::update_injection() {
         const auto [true_bearing, distance_nm] = bearing_and_distance_nm(
             ownship.latitude_degrees, ownship.longitude_degrees,
             target.latitude_degrees, target.longitude_degrees);
-        double relative_bearing = true_bearing - ownship.heading_degrees;
+        const double ownship_true_heading = ownship.true_heading_degrees != 0.0
+            ? ownship.true_heading_degrees : ownship.heading_degrees;
+        double relative_bearing = true_bearing - ownship_true_heading;
         while (relative_bearing > 180.0) relative_bearing -= 360.0;
         while (relative_bearing < -180.0) relative_bearing += 360.0;
         ids[slot] = static_cast<int>(target.mode_s_id != 0
             ? target.mode_s_id : 0xE00000U + static_cast<std::uint32_t>(slot));
-        transponder_modes[slot] = target.on_ground ? 5 : 3;
+        // Mode 7 allows X-Plane 12.4.1+ to generate native TA/RA advisories
+        // when the user's aircraft is equipped for them. Ground targets use
+        // the documented ground-surveillance mode.
+        transponder_modes[slot] = target.on_ground ? 5 : 7;
         bearings[slot] = static_cast<float>(relative_bearing);
         distances[slot] = static_cast<float>(distance_nm * nautical_miles_to_meters);
         altitudes[slot] = static_cast<float>(
-            (target.altitude_feet - ownship.altitude_feet) * feet_to_meters);
+            (target.altitude_feet - (ownship.geometric_altitude_feet != 0.0
+                ? ownship.geometric_altitude_feet : ownship.altitude_feet)) * feet_to_meters);
         headings[slot] = static_cast<float>(target.track_degrees);
         vertical_speeds[slot] = static_cast<float>(target.vertical_speed_fpm);
         pack_text(callsigns, slot, target.callsign);
@@ -323,7 +329,7 @@ void XPlaneTraffic::update_injection() {
     XPLMSetDatab(aircraft_type_, aircraft_types.data() + text_width, text_width,
                  count * text_width);
     publish_injection_state(true, "Active - " + std::to_string(count) +
-                                  " online targets in X-Plane TCAS");
+                                  " targets available to X-Plane ATC/TCAS");
 }
 
 float XPlaneTraffic::flight_loop(float elapsed_since_last_call, float, int, void* refcon) {

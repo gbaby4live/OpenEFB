@@ -16,6 +16,8 @@ struct AirportWeather {
     std::string airport_id;
     std::string metar;
     WeatherSource source{WeatherSource::none};
+    std::string taf;
+    WeatherSource forecast_source{WeatherSource::none};
 };
 
 struct WeatherSnapshot {

@@ -249,3 +249,8 @@ documents because no single worldwide source permits permanent offline caching.
 See [docs/architecture.md](docs/architecture.md) for architectural boundaries
 and threading invariants, and [docs/product-roadmap.md](docs/product-roadmap.md)
 for the MSFS 2024-style feature roadmap.
+
+RC27 adds reversible enroute waypoints, current/TAF weather modes, cockpit-matched
+indicated altitude and magnetic heading, native X-Plane traffic-advisory
+participation, responsive page scrolling, compact briefing controls, airport
+name/code map actions, and the refreshed premium cockpit palette.

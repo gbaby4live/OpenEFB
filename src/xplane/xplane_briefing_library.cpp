@@ -436,8 +436,9 @@ void XPlaneBriefingLibrary::archive(const ArchiveRequest& request) {
         const auto charts = parse_faa_chart_catalog(catalog, airport);
         if (charts.empty()) {
             write_binary(chart_status, briefing_pdf(
-                "OpenEFB Chart Download Status\n\nNo FAA chart records were found for " + airport +
-                ". Automatic chart downloads currently cover U.S. FAA airports."));
+                "OpenEFB Chart Download Status\n\nAutomatic FAA charts are unavailable for " + airport +
+                ". FAA d-TPP coverage is limited to participating U.S. airports. "
+                "You can add licensed or user-provided PDF charts to this airport's Charts folder."));
             continue;
         }
         const auto marker_path = chart_folder / ".faa-cycle";

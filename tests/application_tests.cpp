@@ -259,6 +259,8 @@ int main() {
                          openefb::WeatherSource::online};
     weather.destination = {"KPDX", "KPDX 251653Z 22005KT 10SM SCT025 17/10 A3001",
                            openefb::WeatherSource::cache};
+    weather.departure.taf = "KSEA 251720Z 2518/2624 18008KT P6SM SCT020";
+    weather.departure.forecast_source = openefb::WeatherSource::online;
     weather.route_revision = 4;
     weather_model.update(weather);
     require(weather_model.snapshot().available, "weather update marks the service available");
@@ -269,6 +271,10 @@ int main() {
     require(weather_model.snapshot().departure.source == openefb::WeatherSource::online &&
                 weather_model.snapshot().destination.source == openefb::WeatherSource::cache,
             "weather source priority is visible to the UI");
+    require(weather_model.snapshot().departure.taf.find("KSEA") == 0 &&
+                weather_model.snapshot().departure.forecast_source ==
+                    openefb::WeatherSource::online,
+            "published TAF forecast and its source are retained independently of METAR");
     require(weather_model.snapshot().route_revision == 4,
             "weather records their source route revision");
     require(weather_model.snapshot().revision == 1, "weather updates have revisions");

@@ -37,6 +37,7 @@ struct MapHitTarget {
     int x{};
     int y{};
     FlightPlanLeg leg;
+    std::string name;
 };
 
 struct PoiHitTarget {
@@ -56,6 +57,8 @@ struct PendingMapNavigation {
     FlightPlanLeg leg;
     std::string name;
     std::string detail;
+    int existing_route_index{-1};
+    bool removable_from_route{false};
 };
 
 class XPlaneWindow final : public WindowSurface {
@@ -177,6 +180,9 @@ private:
     bool show_map_route_{true};
     bool show_map_labels_{true};
     int map_marker_scale_{100};
+    mutable bool show_weather_forecast_{false};
+    mutable int page_scroll_pixels_{0};
+    mutable EfbPage page_scroll_page_{EfbPage::home};
     int map_drag_start_x_{};
     int map_drag_start_y_{};
     double map_drag_start_latitude_{};

@@ -100,6 +100,11 @@ original open-source code and visuals.
   distance enforcement, visible provider health, bounded exponential retry
   backoff, 90-second degraded-cache expiry, and automatic TCAS fallback
 
+- RC27: reversible enroute map waypoints, endpoint-safe route continuation,
+  published TAF forecasts, cockpit indicated/magnetic telemetry, native
+  X-Plane TA/RA participation, responsive page scrolling and compact control
+  reflow, airport name/code actions, and a brighter premium cockpit shell
+
 ## Planned operational workflow
 
 - Final traffic acceptance testing across areas with different ADS-B receiver
