@@ -179,8 +179,8 @@ When enabled and online targets are available, OpenEFB requests exclusive
 multiplayer-aircraft access, publishes up to 63 nearby targets to compatible
 cockpit traffic displays, and refreshes the TCAS arrays every frame. OpenEFB
 does not take control when another provider owns traffic and releases control
-when another plugin requests it. This stage supplies TCAS awareness only; it
-does not create exterior 3D aircraft models.
+when another plugin requests it. Injection supplies cockpit TCAS awareness; it
+does not register synthetic flights with X-Plane's native ATC controller.
 Yellow traffic aircraft are selectable. Clicking one opens a compact opaque
 card with its published identity, altitude, speed, and, when available, its
 departure and destination. Route metadata is requested only for the selected
@@ -254,3 +254,22 @@ RC27 adds reversible enroute waypoints, current/TAF weather modes, cockpit-match
 indicated altitude and magnetic heading, native X-Plane traffic-advisory
 participation, responsive page scrolling, compact briefing controls, airport
 name/code map actions, and the refreshed premium cockpit palette.
+
+RC28 adds optional moving exterior traffic through X-Plane's supported instancing
+API, capped at 12 objects within 25 NM. It first uses a lightweight recognizable
+regional-jet model already installed with X-Plane and retains OpenEFB's original
+generic aircraft as a portable fallback; no X-Plane assets are redistributed.
+It also fixes compact aircraft-strip clipping, persists additional
+map and traffic settings, expands FAA airport identifier matching, ignores FAA
+deletion placeholders, and records actionable chart cycle and HTTP diagnostics.
+The exterior model is two-sided and carries navigation/strobe points for better
+visual acquisition. Its lightweight faceted fuselage makes nearby targets read
+as aircraft instead of flat symbols. Exterior models remain independent of TCAS
+ownership, so another cooperative traffic plugin can own cockpit TCAS without
+making OpenEFB's enabled exterior layer disappear. A saved Settings slider
+adjusts the magenta route from a 2-pixel fine line to a 12-pixel bold line.
+Nearby airborne traffic inside 3 NM and 1,200 feet also produces an OpenEFB
+clock-position, distance, and relative-altitude callout. X-Plane displays and
+speaks that callout according to the user's text-to-speech preferences. This is
+an EFB safety aid, not a native ATC instruction; equipped aircraft on X-Plane
+12.4.1 or newer can independently generate native TCAS TA/RA advisories.

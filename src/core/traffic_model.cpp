@@ -42,6 +42,9 @@ void TrafficModel::mark_unavailable() noexcept {
     snapshot_.injection_active = false;
     snapshot_.injection_status = snapshot_.injection_requested ? "Waiting for traffic adapter"
                                                                : "Disabled";
+    snapshot_.visual_traffic_active = false;
+    snapshot_.visual_traffic_status = snapshot_.visual_traffic_requested
+        ? "Waiting for traffic injection" : "Disabled";
     snapshot_.revision = next_revision_++;
 }
 
@@ -59,6 +62,26 @@ void TrafficModel::set_injection_requested(bool requested) {
 void TrafficModel::set_injection_state(bool active, std::string status) {
     snapshot_.injection_active = active;
     snapshot_.injection_status = std::move(status);
+    snapshot_.revision = next_revision_++;
+}
+
+void TrafficModel::set_visual_traffic_requested(bool requested) {
+    if (snapshot_.visual_traffic_requested == requested) return;
+    snapshot_.visual_traffic_requested = requested;
+    if (!requested) {
+        snapshot_.visual_traffic_active = false;
+        snapshot_.visual_traffic_status = "Disabled";
+    } else if (!snapshot_.visual_traffic_active) {
+        snapshot_.visual_traffic_status = "Waiting for traffic injection";
+    }
+    snapshot_.revision = next_revision_++;
+}
+
+void TrafficModel::set_visual_traffic_state(bool active, std::string status) {
+    if (snapshot_.visual_traffic_active == active &&
+        snapshot_.visual_traffic_status == status) return;
+    snapshot_.visual_traffic_active = active;
+    snapshot_.visual_traffic_status = std::move(status);
     snapshot_.revision = next_revision_++;
 }
 

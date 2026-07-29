@@ -72,7 +72,7 @@ std::string overpass_query(const PoiRequest& request) {
 std::string download_pois(const PoiRequest& request) {
     const std::string body = "data=" + percent_encode(overpass_query(request));
     HINTERNET session = WinHttpOpen(
-        L"OpenEFB/1.0.0-rc12 (+https://github.com/Gbaby4live/OpenEFB)",
+        L"OpenEFB/1.0.0-rc28 (+https://github.com/Gbaby4live/OpenEFB)",
         WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) return {};

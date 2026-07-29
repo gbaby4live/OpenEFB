@@ -6,6 +6,9 @@
 *.lo
 *.o
 *.obj
+!resources/
+!resources/traffic/
+!resources/traffic/*.obj
 
 # Precompiled Headers
 *.gch
@@ -43,6 +46,7 @@
 build/
 Build/
 build-*/
+.vs/
 
 # CMake generated files
 CMakeFiles/

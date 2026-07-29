@@ -32,6 +32,7 @@ constexpr int minimum_request_radius_nm = 25;
 constexpr int default_request_radius_nm = 100;
 constexpr int maximum_request_radius_nm = 200;
 constexpr double pi = 3.14159265358979323846;
+constexpr double maximum_prediction_seconds = 30.0;
 
 struct DownloadResult {
     bool success{false};
@@ -134,6 +135,33 @@ double distance_nm(double latitude_1, double longitude_1,
     const double east = longitude_delta * std::cos(mean_latitude) * 60.0;
     const double north = (latitude_2 - latitude_1) * 60.0;
     return std::hypot(east, north);
+}
+
+void predict_target_position(TrafficTarget& target, double age_seconds) {
+    if (!valid_coordinate(target.latitude_degrees, target.longitude_degrees) ||
+        !std::isfinite(target.ground_speed_knots) ||
+        !std::isfinite(target.track_degrees)) return;
+
+    const double seconds = std::clamp(age_seconds, 0.0, maximum_prediction_seconds);
+    const double distance = std::max(0.0, target.ground_speed_knots) * seconds / 3600.0;
+    const double track_radians = target.track_degrees * pi / 180.0;
+    const double north_nm = std::cos(track_radians) * distance;
+    const double east_nm = std::sin(track_radians) * distance;
+    const double original_latitude = target.latitude_degrees;
+    target.latitude_degrees = std::clamp(original_latitude + north_nm / 60.0, -90.0, 90.0);
+
+    const double longitude_scale = std::max(
+        0.01,
+        std::abs(std::cos((original_latitude + target.latitude_degrees) * 0.5 * pi / 180.0)));
+    target.longitude_degrees += east_nm / (60.0 * longitude_scale);
+    while (target.longitude_degrees > 180.0) target.longitude_degrees -= 360.0;
+    while (target.longitude_degrees < -180.0) target.longitude_degrees += 360.0;
+
+    if (!target.on_ground && std::isfinite(target.vertical_speed_fpm)) {
+        target.altitude_feet = std::max(
+            0.0,
+            target.altitude_feet + target.vertical_speed_fpm * seconds / 60.0);
+    }
 }
 
 std::vector<std::string_view> aircraft_objects(std::string_view json) {
@@ -251,7 +279,7 @@ DownloadResult download_aircraft(double latitude, double longitude, int radius_n
     swprintf_s(path, L"/v2/lat/%.5f/lon/%.5f/dist/%d",
         latitude, longitude, radius_nm);
     HINTERNET session = WinHttpOpen(
-        L"OpenEFB/1.0.0-rc26 (+https://github.com/Gbaby4live/OpenEFB)",
+        L"OpenEFB/1.0.0-rc28 (+https://github.com/Gbaby4live/OpenEFB)",
         WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) return {false, {}, "ADSB.LOL connection could not start"};
@@ -309,7 +337,7 @@ DownloadResult download_route(const std::string& callsign) {
     const std::string route_path = "/routes/" + callsign.substr(0, 2) + "/" + callsign + ".json";
     const std::wstring path(route_path.begin(), route_path.end());
     HINTERNET session = WinHttpOpen(
-        L"OpenEFB/1.0.0-rc26 (+https://github.com/Gbaby4live/OpenEFB)",
+        L"OpenEFB/1.0.0-rc28 (+https://github.com/Gbaby4live/OpenEFB)",
         WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) return {false, {}, "Route connection could not start"};
@@ -428,10 +456,14 @@ public:
 
     OnlineTrafficSnapshot snapshot() const {
         std::lock_guard lock(mutex_);
-        const bool fresh = available_ &&
-            std::chrono::steady_clock::now() - last_success_ <= stale_interval;
+        const auto now = std::chrono::steady_clock::now();
+        const auto observation_age = now - last_success_;
+        const bool fresh = available_ && observation_age <= stale_interval;
         auto targets = fresh ? targets_ : std::vector<TrafficTarget>{};
         for (auto& target : targets) {
+            predict_target_position(
+                target,
+                std::chrono::duration<double>(observation_age).count());
             const auto route = route_cache_.find(normalized_callsign(target.callsign));
             if (route == route_cache_.end()) continue;
             target.departure_airport = route->second.departure;

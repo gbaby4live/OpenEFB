@@ -177,11 +177,16 @@ std::string current_faa_cycle() {
 }
 
 #if IBM
-std::vector<std::uint8_t> download_faa_file(const std::wstring& path, std::size_t maximum_size) {
-    HINTERNET session = WinHttpOpen(L"OpenEFB/1.0.0-rc12 (+https://github.com/Gbaby4live/OpenEFB)",
+struct FaaDownload {
+    std::vector<std::uint8_t> data;
+    std::string status;
+};
+
+FaaDownload download_faa_file(const std::wstring& path, std::size_t maximum_size) {
+    HINTERNET session = WinHttpOpen(L"OpenEFB/1.0.0-rc28 (+https://github.com/Gbaby4live/OpenEFB)",
                                     WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!session) return {};
+    if (!session) return {{}, "WinHTTP session error " + std::to_string(GetLastError())};
     WinHttpSetTimeouts(session, 4000, 4000, 8000, 8000);
     DWORD secure_protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
     WinHttpSetOption(session, WINHTTP_OPTION_SECURE_PROTOCOLS,
@@ -190,7 +195,9 @@ std::vector<std::uint8_t> download_faa_file(const std::wstring& path, std::size_
     HINTERNET request = connection ? WinHttpOpenRequest(
         connection, L"GET", path.c_str(), nullptr, WINHTTP_NO_REFERER,
         WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE) : nullptr;
-    std::vector<std::uint8_t> data;
+    FaaDownload result;
+    result.status = connection ? "FAA request failed" :
+                                 "FAA connection error " + std::to_string(GetLastError());
     if (request && WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
                                       WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
         WinHttpReceiveResponse(request, nullptr)) {
@@ -199,28 +206,41 @@ std::vector<std::uint8_t> download_faa_file(const std::wstring& path, std::size_
         if (WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
                                 WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size,
                                 WINHTTP_NO_HEADER_INDEX) && status == 200) {
+            result.status = "FAA HTTP 200";
             for (;;) {
                 DWORD available{};
                 if (!WinHttpQueryDataAvailable(request, &available) || available == 0) break;
-                if (data.size() + available > maximum_size) { data.clear(); break; }
-                const auto offset = data.size();
-                data.resize(offset + available);
-                DWORD read{};
-                if (!WinHttpReadData(request, data.data() + offset, available, &read)) {
-                    data.clear();
+                if (result.data.size() + available > maximum_size) {
+                    result.data.clear();
+                    result.status = "FAA file exceeded the safe download limit";
                     break;
                 }
-                data.resize(offset + read);
+                const auto offset = result.data.size();
+                result.data.resize(offset + available);
+                DWORD read{};
+                if (!WinHttpReadData(request, result.data.data() + offset, available, &read)) {
+                    result.data.clear();
+                    result.status = "FAA read error " + std::to_string(GetLastError());
+                    break;
+                }
+                result.data.resize(offset + read);
             }
+        } else if (status != 0) {
+            result.status = "FAA HTTP " + std::to_string(status);
         }
     }
     if (request) WinHttpCloseHandle(request);
     if (connection) WinHttpCloseHandle(connection);
     WinHttpCloseHandle(session);
-    return data;
+    if (result.data.empty() && result.status == "FAA HTTP 200")
+        result.status = "FAA returned an empty file";
+    return result;
 }
 #else
-std::vector<std::uint8_t> download_faa_file(const std::wstring&, std::size_t) { return {}; }
+struct FaaDownload { std::vector<std::uint8_t> data; std::string status; };
+FaaDownload download_faa_file(const std::wstring&, std::size_t) {
+    return {{}, "Automatic FAA downloads are currently available in the Windows build"};
+}
 #endif
 
 std::string route_text(const std::vector<std::string>& route) {
@@ -373,15 +393,18 @@ void XPlaneBriefingLibrary::archive(const ArchiveRequest& request) {
     if (request.destination != request.departure) airports.push_back(request.destination);
     const std::string cycle = current_faa_cycle();
     std::string catalog;
+    std::string catalog_status = "saved catalog";
     const auto catalog_path = directory_ / "faa-cache" / ("d-TPP_Metafile-" + cycle + ".xml");
     catalog = read_text(catalog_path, maximum_catalog_size);
     if (catalog.empty() && !stopping_) {
         const std::wstring remote = L"/d-tpp/" + std::wstring(cycle.begin(), cycle.end()) +
-                                    L"/xml_data/d-tpp_Metafile.xml";
+                                    L"/xml_data/d-TPP_Metafile.xml";
         const auto downloaded = download_faa_file(remote, maximum_catalog_size);
-        if (!downloaded.empty()) {
-            catalog.assign(reinterpret_cast<const char*>(downloaded.data()), downloaded.size());
-            write_binary(catalog_path, downloaded);
+        catalog_status = downloaded.status;
+        if (!downloaded.data.empty()) {
+            catalog.assign(reinterpret_cast<const char*>(downloaded.data.data()),
+                           downloaded.data.size());
+            write_binary(catalog_path, downloaded.data);
         }
     }
 
@@ -430,21 +453,23 @@ void XPlaneBriefingLibrary::archive(const ArchiveRequest& request) {
         if (catalog.empty()) {
             write_binary(chart_status, briefing_pdf(
                 "OpenEFB Chart Download Status\n\nFAA chart catalog was not available. "
-                "Check internet access, then select Refresh."));
+                "Cycle: " + cycle + "\nAirport: " + airport + "\nResult: " + catalog_status +
+                "\nCheck internet access, then select Refresh."));
             continue;
         }
         const auto charts = parse_faa_chart_catalog(catalog, airport);
         if (charts.empty()) {
             write_binary(chart_status, briefing_pdf(
-                "OpenEFB Chart Download Status\n\nAutomatic FAA charts are unavailable for " + airport +
-                ". FAA d-TPP coverage is limited to participating U.S. airports. "
-                "You can add licensed or user-provided PDF charts to this airport's Charts folder."));
+                "OpenEFB Chart Download Status\n\nNo FAA d-TPP records matched airport " + airport +
+                " in cycle " + cycle + ". OpenEFB checked both ICAO and domestic FAA identifiers. "
+                "Confirm the active route contains the airport code, then select Refresh."));
             continue;
         }
         const auto marker_path = chart_folder / ".faa-cycle";
         if (read_text(marker_path, 32) == cycle) continue;
         bool complete = true;
         std::size_t downloaded_count{};
+        std::string last_download_status;
         for (const auto& chart : charts) {
             if (stopping_) return;
             const auto stem = std::filesystem::path(chart.pdf_name).stem().string();
@@ -453,8 +478,10 @@ void XPlaneBriefingLibrary::archive(const ArchiveRequest& request) {
             const std::wstring remote = L"/d-tpp/" + std::wstring(cycle.begin(), cycle.end()) + L"/" +
                                         std::wstring(chart.pdf_name.begin(), chart.pdf_name.end());
             const auto pdf = download_faa_file(remote, maximum_chart_size);
-            if (pdf.size() < 5 || pdf[0] != '%' || pdf[1] != 'P' || pdf[2] != 'D' || pdf[3] != 'F' ||
-                !write_binary(local_path, pdf)) complete = false;
+            last_download_status = pdf.status;
+            if (pdf.data.size() < 5 || pdf.data[0] != '%' || pdf.data[1] != 'P' ||
+                pdf.data[2] != 'D' || pdf.data[3] != 'F' ||
+                !write_binary(local_path, pdf.data)) complete = false;
             else ++downloaded_count;
         }
         if (complete) {
@@ -465,7 +492,9 @@ void XPlaneBriefingLibrary::archive(const ArchiveRequest& request) {
             write_binary(chart_status, briefing_pdf(
                 "OpenEFB Chart Download Status\n\nDownloaded " +
                 std::to_string(downloaded_count) + " of " +
-                std::to_string(charts.size()) + " FAA charts. Select Refresh to retry."));
+                std::to_string(charts.size()) + " FAA charts for " + airport +
+                " in cycle " + cycle + ". Last result: " + last_download_status +
+                ". Select Refresh to retry."));
         }
     }
 }

@@ -7,6 +7,11 @@
 #include <XPLMDataAccess.h>
 #include <XPLMPlanes.h>
 #include <XPLMProcessing.h>
+#include <XPLMInstance.h>
+#include <XPLMScenery.h>
+
+#include <string>
+#include <vector>
 
 namespace openefb::xplane {
 
@@ -25,6 +30,11 @@ private:
     void try_acquire_tcas();
     void release_tcas(std::string status);
     void publish_injection_state(bool active, std::string status);
+    void update_visual_traffic(const std::vector<TrafficTarget>& targets);
+    void update_traffic_warning(const std::vector<TrafficTarget>& targets,
+                                float elapsed_seconds);
+    bool load_visual_model();
+    void release_visual_traffic();
     static void planes_available(void* refcon);
     static float flight_loop(float, float, int, void* refcon);
 
@@ -49,6 +59,11 @@ private:
     XPLMDataRef relative_distance_{nullptr};
     XPLMDataRef relative_altitude_{nullptr};
     XPLMDataRef target_heading_{nullptr};
+    XPLMObjectRef visual_object_{nullptr};
+    std::vector<XPLMInstanceRef> visual_instances_;
+    std::string visual_model_name_;
+    std::string active_warning_target_;
+    float warning_cooldown_seconds_{0.0F};
     bool injection_datarefs_available_{false};
     bool owns_tcas_{false};
     bool waiting_for_tcas_{false};

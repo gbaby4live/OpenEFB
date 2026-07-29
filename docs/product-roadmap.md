@@ -104,6 +104,13 @@ original open-source code and visuals.
   published TAF forecasts, cockpit indicated/magnetic telemetry, native
   X-Plane TA/RA participation, responsive page scrolling and compact control
   reflow, airport name/code actions, and a brighter premium cockpit shell
+- RC28: optional bounded XPLMInstance exterior traffic using an installed
+  X-Plane regional-jet model with an original distributable generic fallback,
+  nearby OpenEFB spoken/onscreen traffic callouts, compact aircraft-strip clipping, persistent map and
+  traffic display settings, domestic/ICAO FAA identifier matching, deleted-chart
+  filtering, cycle/HTTP download diagnostics, improved exterior visibility, and
+  persistent 2-12 px route-thickness control; exterior rendering is independent
+  of cooperative X-Plane TCAS ownership
 
 ## Planned operational workflow
 

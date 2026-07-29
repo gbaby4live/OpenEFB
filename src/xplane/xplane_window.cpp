@@ -124,7 +124,7 @@ int page_content_height(EfbPage page) {
     case EfbPage::planning: return 500;
     case EfbPage::briefing: return 650;
     case EfbPage::logbook: return 570;
-    case EfbPage::settings: return 470;
+    case EfbPage::settings: return 1156;
     case EfbPage::about: return 440;
     }
     return 0;
@@ -365,6 +365,27 @@ void draw_card(int left, int top, int right, int bottom, std::string_view title,
     draw_rectangle(left, top, left + 4, bottom, active_navigation);
     draw_text(left + 18, top - 30, title, text_primary);
     draw_text(left + 18, top - 57, detail, text_muted);
+}
+
+constexpr int minimum_route_line_width = 2;
+constexpr int maximum_route_line_width = 12;
+
+int route_width_from_slider(int x, int left, int right) {
+    if (right <= left) return minimum_route_line_width;
+    const double ratio = static_cast<double>(std::clamp(x, left, right) - left) /
+                         static_cast<double>(right - left);
+    return std::clamp(
+        minimum_route_line_width + static_cast<int>(std::lround(
+            ratio * (maximum_route_line_width - minimum_route_line_width))),
+        minimum_route_line_width, maximum_route_line_width);
+}
+
+int route_slider_position(int width, int left, int right) {
+    const double ratio = static_cast<double>(
+        std::clamp(width, minimum_route_line_width, maximum_route_line_width) -
+        minimum_route_line_width) /
+        static_cast<double>(maximum_route_line_width - minimum_route_line_width);
+    return left + static_cast<int>(std::lround(ratio * (right - left)));
 }
 
 void draw_button(int left, int top, int right, int bottom, std::string_view label,
@@ -1134,6 +1155,7 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
                    bool filters_open, int filter_scroll,
                    bool show_aircraft, bool show_aircraft_info,
                    bool show_route, bool show_labels, int marker_scale,
+                   int route_line_width,
                    int left, int top, int right, int bottom) {
     hit_targets.clear();
     poi_hit_targets.clear();
@@ -1274,11 +1296,14 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
         double x_2 = route_points[index].x;
         double y_2 = route_points[index].y;
         if (clip_line(x_1, y_1, x_2, y_2, map_left, map_top, map_right, map_bottom)) {
+            const float route_width = static_cast<float>(std::clamp(
+                route_line_width, minimum_route_line_width, maximum_route_line_width));
+            const float active_bonus = flight_plan.legs[index].active ? 1.5F : 0.0F;
             draw_line(x_1, y_1, x_2, y_2,
                       Color{0.08F, 0.02F, 0.07F, 0.96F},
-                      flight_plan.legs[index].active ? 8.0F : 6.5F);
+                      route_width + active_bonus + 3.0F);
             draw_line(x_1, y_1, x_2, y_2, route_line,
-                      flight_plan.legs[index].active ? 5.0F : 4.0F);
+                      route_width + active_bonus);
         }
     }
 
@@ -1450,17 +1475,20 @@ void draw_home_map(const TelemetrySnapshot& telemetry, const FlightPlanSnapshot&
     if (show_aircraft_info) {
         char live_info[96]{};
         std::snprintf(live_info, sizeof(live_info),
-                      "ALT IND %.0f FT   GS %.0f KT   HDG MAG %03.0f",
+                      "ALT %.0f FT  GS %.0f KT  HDG %03.0f",
                       telemetry.altitude_feet, telemetry.ground_speed_knots,
                       std::fmod(telemetry.heading_degrees + 360.0, 360.0));
         const int info_left = map_left + 12;
         const int info_top = map_top - 10;
-        const int info_right = std::min(map_right - 62, info_left + 220);
+        const int info_right = std::min(map_right - 62, info_left + 252);
         draw_rectangle(info_left, info_top, info_right, info_top - 24, status_bar);
         draw_border(info_left, info_top, info_right, info_top - 24, accent, 1.0F);
         draw_tactical_corners(info_left, info_top, info_right, info_top - 24,
                               text_primary, 6);
-        draw_shadowed_text(info_left + 10, info_top - 17, live_info, text_primary);
+        const std::size_t capacity = static_cast<std::size_t>(
+            std::max(8, (info_right - info_left - 20) / 7));
+        draw_shadowed_text(info_left + 10, info_top - 17,
+                           shortened(live_info, capacity), text_primary);
     }
 
     const TrafficTarget* selected_traffic = nullptr;
@@ -2094,6 +2122,7 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                       map_filters_open, map_filter_scroll,
                       show_map_aircraft, show_map_aircraft_info,
                       show_map_route, show_map_labels, map_marker_scale,
+                      display_preferences.route_line_width,
                       left, top, right, bottom);
         break;
     case EfbPage::flight_plan:
@@ -2128,25 +2157,64 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                                 std::to_string(traffic.online_range_nm) + " NM", 56));
         draw_button(card_right - 122, top - 91, card_right - 18, top - 124,
                     display_preferences.inject_traffic ? "Disable" : "Enable", true);
-        draw_card(left, top - 178, card_right, top - 274, "High contrast text",
+        draw_card(left, top - 178, card_right, top - 274, "Moving exterior 3D traffic",
+                  shortened(traffic.visual_traffic_status, 62));
+        draw_button(card_right - 122, top - 207, card_right - 18, top - 240,
+                    display_preferences.show_3d_traffic ? "Disable" : "Enable", true);
+        draw_card(left, top - 294, card_right, top - 390, "Map aircraft information strip",
+                  display_preferences.show_map_aircraft_info
+                      ? "Visible - altitude, ground speed, and magnetic heading"
+                      : "Hidden - more map area remains unobstructed");
+        draw_button(card_right - 122, top - 323, card_right - 18, top - 356,
+                    display_preferences.show_map_aircraft_info ? "Hide" : "Show", true);
+        draw_card(left, top - 410, card_right, top - 506, "Magenta flight-plan route",
+                  display_preferences.show_map_route ? "Visible on the moving map"
+                                                     : "Hidden on the moving map");
+        draw_button(card_right - 122, top - 439, card_right - 18, top - 472,
+                    display_preferences.show_map_route ? "Hide" : "Show", true);
+        draw_card(left, top - 526, card_right, top - 622, "Magenta route thickness",
+                  std::to_string(display_preferences.route_line_width) +
+                      " px - drag from the thinnest to the boldest setting");
+        {
+            const int slider_left = left + 18;
+            const int slider_right = card_right - 18;
+            const int slider_y = top - 604;
+            const int knob_x = route_slider_position(
+                display_preferences.route_line_width, slider_left, slider_right);
+            draw_line(slider_left, slider_y, slider_right, slider_y, map_grid, 6.0F);
+            draw_line(slider_left, slider_y, knob_x, slider_y, route_line, 6.0F);
+            draw_rectangle(knob_x - 6, slider_y + 9, knob_x + 6, slider_y - 9,
+                           active_navigation);
+        }
+        draw_card(left, top - 642, card_right, top - 738, "Map labels",
+                  display_preferences.show_map_labels ? "Airport, waypoint, POI, and traffic labels visible"
+                                                      : "Labels hidden for a cleaner map");
+        draw_button(card_right - 122, top - 671, card_right - 18, top - 704,
+                    display_preferences.show_map_labels ? "Hide" : "Show", true);
+        draw_card(left, top - 758, card_right, top - 854, "Map marker size",
+                  std::to_string(display_preferences.map_marker_scale) +
+                      "% - cycles through 75, 100, 125, and 150 percent");
+        draw_button(card_right - 122, top - 787, card_right - 18, top - 820,
+                    "Next size", true);
+        draw_card(left, top - 874, card_right, top - 970, "High contrast text",
                   display_preferences.high_contrast ? "Enabled - maximum text visibility" :
                                                        "Disabled - standard cockpit palette");
-        draw_button(card_right - 122, top - 207, card_right - 18, top - 240,
+        draw_button(card_right - 122, top - 903, card_right - 18, top - 936,
                     display_preferences.high_contrast ? "Turn off" : "Turn on", true);
-        draw_card(left, top - 294, card_right, top - 390, "Comfort-size window",
+        draw_card(left, top - 990, card_right, top - 1086, "Comfort-size window",
                   display_preferences.comfort_size ? "Enabled - 1000 x 700 minimum" :
                                                      "Disabled - 900 x 640 minimum");
-        draw_button(card_right - 122, top - 323, card_right - 18, top - 356,
+        draw_button(card_right - 122, top - 1019, card_right - 18, top - 1052,
                     display_preferences.comfort_size ? "Compact" : "Enlarge", true);
-        draw_text(left, top - 422, "Window position and size save automatically.", text_muted);
+        draw_text(left, top - 1118, "All display settings save automatically.", text_muted);
         break;
     case EfbPage::about:
         draw_text(left, top, "About OpenEFB", text_primary, xplmFont_Proportional);
         draw_text(left, top - 28, "An open-source electronic flight bag for X-Plane 12.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Version", "OPEN EFB / 1.0 RC27");
+                  "Version", "OPEN EFB / 1.0 RC28");
         draw_card(left, top - 178, card_right, top - 274,
-                  "Release", "Reversible routing, forecasts, native traffic alerts, and responsive UI");
+                  "Release", "Exterior 3D traffic, FAA chart recovery, and expanded settings");
         draw_card(left, top - 294, card_right, top - 390,
                   "Project", "Built in the open for the flight-sim community");
         break;
@@ -2221,6 +2289,11 @@ XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
     display_preferences_ = preferences_.load_display_preferences();
     traffic_model_.set_injection_requested(display_preferences_.inject_traffic);
     traffic_model_.set_online_range_nm(display_preferences_.traffic_range_nm);
+    traffic_model_.set_visual_traffic_requested(display_preferences_.show_3d_traffic);
+    show_map_aircraft_info_ = display_preferences_.show_map_aircraft_info;
+    show_map_route_ = display_preferences_.show_map_route;
+    show_map_labels_ = display_preferences_.show_map_labels;
+    map_marker_scale_ = display_preferences_.map_marker_scale;
     high_contrast_mode = display_preferences_.high_contrast;
     WindowGeometry geometry;
     if (const auto stored = preferences_.load_geometry()) {
@@ -2665,6 +2738,36 @@ void XPlaneWindow::toggle_traffic_injection() {
     preferences_.save_display_preferences(display_preferences_);
 }
 
+void XPlaneWindow::toggle_3d_traffic() {
+    display_preferences_.show_3d_traffic = !display_preferences_.show_3d_traffic;
+    traffic_model_.set_visual_traffic_requested(display_preferences_.show_3d_traffic);
+    preferences_.save_display_preferences(display_preferences_);
+}
+
+void XPlaneWindow::toggle_map_aircraft_info() {
+    show_map_aircraft_info_ = !show_map_aircraft_info_;
+    display_preferences_.show_map_aircraft_info = show_map_aircraft_info_;
+    preferences_.save_display_preferences(display_preferences_);
+}
+
+void XPlaneWindow::toggle_map_route() {
+    show_map_route_ = !show_map_route_;
+    display_preferences_.show_map_route = show_map_route_;
+    preferences_.save_display_preferences(display_preferences_);
+}
+
+void XPlaneWindow::toggle_map_labels() {
+    show_map_labels_ = !show_map_labels_;
+    display_preferences_.show_map_labels = show_map_labels_;
+    preferences_.save_display_preferences(display_preferences_);
+}
+
+void XPlaneWindow::cycle_marker_scale() {
+    map_marker_scale_ = map_marker_scale_ >= 150 ? 75 : map_marker_scale_ + 25;
+    display_preferences_.map_marker_scale = map_marker_scale_;
+    preferences_.save_display_preferences(display_preferences_);
+}
+
 void XPlaneWindow::adjust_traffic_range(int direction) {
     if (direction == 0) return;
     display_preferences_.traffic_range_nm = std::clamp(
@@ -2786,6 +2889,21 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
     int bottom{};
     XPLMGetWindowGeometry(window_id, &left, &top, &right, &bottom);
     if (status != xplm_MouseDown) {
+        if (window->route_width_slider_dragging_) {
+            if (window->ui_model_.active_page() == EfbPage::settings &&
+                (status == xplm_MouseDrag || status == xplm_MouseUp)) {
+                const int content_left = content_left_for(left, right);
+                const int card_right = responsive_card_right(content_left, right);
+                window->display_preferences_.route_line_width = route_width_from_slider(
+                    x, content_left + 18, card_right - 18);
+                if (status == xplm_MouseUp) {
+                    window->route_width_slider_dragging_ = false;
+                    window->preferences_.save_display_preferences(window->display_preferences_);
+                }
+                return 1;
+            }
+            window->route_width_slider_dragging_ = false;
+        }
         if (window->ui_model_.active_page() == EfbPage::home && window->map_dragging_) {
             const int content_left = content_left_for(left, right);
             const int content_top = top - status_bar_height - 38;
@@ -3186,16 +3304,44 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
         const int content_left = content_left_for(left, right);
         const int content_top = top - status_bar_height - 38 + window->page_scroll_pixels_;
         const int card_right = responsive_card_right(content_left, right);
+        if (x >= content_left + 12 && x <= card_right - 12 &&
+            y <= content_top - 590 && y >= content_top - 618) {
+            window->route_width_slider_dragging_ = true;
+            window->display_preferences_.route_line_width = route_width_from_slider(
+                x, content_left + 18, card_right - 18);
+            window->preferences_.save_display_preferences(window->display_preferences_);
+            return 1;
+        }
         if (x >= card_right - 122 && x <= card_right - 18) {
             if (y <= content_top - 91 && y >= content_top - 124) {
                 window->toggle_traffic_injection();
                 return 1;
             }
             if (y <= content_top - 207 && y >= content_top - 240) {
-                window->toggle_high_contrast();
+                window->toggle_3d_traffic();
                 return 1;
             }
             if (y <= content_top - 323 && y >= content_top - 356) {
+                window->toggle_map_aircraft_info();
+                return 1;
+            }
+            if (y <= content_top - 439 && y >= content_top - 472) {
+                window->toggle_map_route();
+                return 1;
+            }
+            if (y <= content_top - 671 && y >= content_top - 704) {
+                window->toggle_map_labels();
+                return 1;
+            }
+            if (y <= content_top - 787 && y >= content_top - 820) {
+                window->cycle_marker_scale();
+                return 1;
+            }
+            if (y <= content_top - 903 && y >= content_top - 936) {
+                window->toggle_high_contrast();
+                return 1;
+            }
+            if (y <= content_top - 1019 && y >= content_top - 1052) {
                 window->toggle_comfort_size();
                 return 1;
             }
@@ -3244,9 +3390,9 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
                                             filters.right - 8, row_top - 22)) continue;
                     switch (row) {
                     case 0: window->show_map_aircraft_ = !window->show_map_aircraft_; break;
-                    case 1: window->show_map_aircraft_info_ = !window->show_map_aircraft_info_; break;
-                    case 2: window->show_map_route_ = !window->show_map_route_; break;
-                    case 3: window->show_map_labels_ = !window->show_map_labels_; break;
+                    case 1: window->toggle_map_aircraft_info(); break;
+                    case 2: window->toggle_map_route(); break;
+                    case 3: window->toggle_map_labels(); break;
                     case 4: window->moving_map_model_.toggle_layer(MapLayer::weather); break;
                     case 5: window->moving_map_model_.toggle_layer(MapLayer::airports); break;
                     case 6: window->moving_map_model_.toggle_layer(MapLayer::navaids); break;
@@ -3264,10 +3410,14 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
                     y <= scale_top && y >= scale_top - 24) {
                     if (x >= filters.right - 68 && x <= filters.right - 42) {
                         window->map_marker_scale_ = std::max(75, window->map_marker_scale_ - 25);
+                        window->display_preferences_.map_marker_scale = window->map_marker_scale_;
+                        window->preferences_.save_display_preferences(window->display_preferences_);
                         return 1;
                     }
                     if (x >= filters.right - 38 && x <= filters.right - 12) {
                         window->map_marker_scale_ = std::min(150, window->map_marker_scale_ + 25);
+                        window->display_preferences_.map_marker_scale = window->map_marker_scale_;
+                        window->preferences_.save_display_preferences(window->display_preferences_);
                         return 1;
                     }
                 }

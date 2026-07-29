@@ -436,6 +436,16 @@ int main() {
                 faa_charts[0].name == "AIRPORT & DIAGRAM" &&
                 faa_charts[1].pdf_name == "00582I16L.PDF",
             "FAA d-TPP catalog parser selects and decodes one airport's charts");
+    const std::string faa_domestic_catalog =
+        "<airport_name ID=\"SMALL FIELD\" apt_ident=\"ABC\" icao_ident=\"\">"
+        "<record><chart_code>APD</chart_code><chart_name>AIRPORT DIAGRAM</chart_name>"
+        "<useraction></useraction><pdf_name>00123AD.PDF</pdf_name></record>"
+        "<record><chart_code>STAR</chart_code><chart_name>DELETED</chart_name>"
+        "<useraction>D</useraction><pdf_name>DEL_APT_SERVED.PDF</pdf_name></record>"
+        "</airport_name>";
+    const auto domestic_charts = openefb::parse_faa_chart_catalog(faa_domestic_catalog, "KABC");
+    require(domestic_charts.size() == 1 && domestic_charts.front().pdf_name == "00123AD.PDF",
+            "FAA parser falls back to domestic identifiers and ignores deletion placeholders");
 
     const auto places = openefb::parse_overpass_pois(
         "101\t24.556\t-81.782\tHarbor Cafe\tcafe\t\t\t\t\n"
@@ -587,6 +597,16 @@ int main() {
                 traffic_model.snapshot().injection_active &&
                 traffic_model.snapshot().injection_status.find("Active") != std::string::npos,
             "traffic model exposes requested and active TCAS injection state");
+    traffic_model.set_visual_traffic_requested(true);
+    traffic_model.set_visual_traffic_state(true, "Active - 1 moving 3D aircraft within 25 NM");
+    require(traffic_model.snapshot().visual_traffic_requested &&
+                traffic_model.snapshot().visual_traffic_active &&
+                traffic_model.snapshot().visual_traffic_status.find("3D") != std::string::npos,
+            "traffic model exposes optional exterior 3D traffic state");
+    traffic_model.set_visual_traffic_requested(false);
+    require(!traffic_model.snapshot().visual_traffic_active &&
+                traffic_model.snapshot().visual_traffic_status == "Disabled",
+            "disabling exterior traffic clears its active state");
     traffic_model.set_injection_requested(false);
     require(!traffic_model.snapshot().injection_requested &&
                 !traffic_model.snapshot().injection_active,

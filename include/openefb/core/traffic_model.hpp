@@ -45,6 +45,9 @@ struct TrafficSnapshot {
     bool injection_requested{false};
     bool injection_active{false};
     std::string injection_status{"Disabled"};
+    bool visual_traffic_requested{true};
+    bool visual_traffic_active{false};
+    std::string visual_traffic_status{"Waiting for traffic injection"};
     std::string route_request_callsign;
     std::uint64_t route_request_revision{};
     std::uint64_t revision{};
@@ -61,6 +64,8 @@ public:
     void mark_unavailable() noexcept;
     void set_injection_requested(bool requested);
     void set_injection_state(bool active, std::string status);
+    void set_visual_traffic_requested(bool requested);
+    void set_visual_traffic_state(bool active, std::string status);
     void request_route_lookup(std::string callsign);
     void set_online_range_nm(int range_nm) noexcept;
     [[nodiscard]] const TrafficSnapshot& snapshot() const noexcept;
