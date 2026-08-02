@@ -111,8 +111,18 @@ original open-source code and visuals.
   filtering, cycle/HTTP download diagnostics, improved exterior visibility, and
   persistent 2-12 px route-thickness control; exterior rendering is independent
   of cooperative X-Plane TCAS ownership
+- RC29: installed-CIFP departure/destination approach browser, transition and
+  final-leg preview, runway-threshold decoding, explicit ground/airborne FMS
+  application, native destination procedure/VPATH metadata loading with a safe
+  fallback, matching in-app plate access, truncated-catalog recovery, expandable
+  route legs, and synchronized blended 3D traffic targets
+- Version 1.0 final desktop release: live blue ownship on calibrated FAA GeoPDF approach
+  plates, active approach-altitude badge, pound-only presentation, compact Menu
+  naming, responsive Briefing/chart scroll rails, double-click transition picker,
+  editable procedure fixes, active AIRAC plan headers, phased offline checklists,
+  and expanded logbook performance details
 
-## Planned operational workflow
+## Post-1.0 operational workflow
 
 - Final traffic acceptance testing across areas with different ADS-B receiver
   coverage

@@ -1,5 +1,6 @@
 #include "xplane_pdf_viewer.hpp"
 #include "xplane_gpu_image.hpp"
+#include "openefb/core/geopdf.hpp"
 
 #include <XPLMGraphics.h>
 
@@ -22,10 +23,13 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <condition_variable>
+#include <cstdio>
 #include <cstdint>
 #include <deque>
+#include <fstream>
 #include <mutex>
 #include <optional>
 #include <thread>
@@ -42,7 +46,110 @@ struct RenderedPage {
     int page{};
     int page_count{};
     std::string status;
+    std::optional<GeoPdfReference> geographic_reference;
 };
+
+std::optional<GeoPdfReference> read_geographic_reference(
+    const std::filesystem::path& path) {
+    std::ifstream input(path, std::ios::binary | std::ios::ate);
+    if (!input) return std::nullopt;
+    const auto size = input.tellg();
+    if (size <= 0 || size > 32 * 1024 * 1024) return std::nullopt;
+    std::string pdf(static_cast<std::size_t>(size), '\0');
+    input.seekg(0);
+    input.read(pdf.data(), size);
+    return input ? parse_geopdf_reference(pdf) : std::nullopt;
+}
+
+void draw_chart_aircraft(double center_x, double center_y, double heading_degrees,
+                         double altitude_feet, int approach_altitude_feet,
+                         double view_left, double view_top,
+                         double view_right, double view_bottom) {
+    XPLMSetGraphicsState(0, 0, 0, 0, 0, 0, 0);
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_BLEND);
+    const double heading = heading_degrees * 3.14159265358979323846 / 180.0;
+    const double forward_x = std::sin(heading);
+    const double forward_y = std::cos(heading);
+    const double right_x = std::cos(heading);
+    const double right_y = -std::sin(heading);
+    constexpr std::array<std::pair<double, double>, 16> silhouette{{
+        {14.0, 0.0}, {5.0, 1.7}, {1.2, 8.2}, {-1.2, 8.2}, {-0.2, 2.1},
+        {-7.0, 2.1}, {-9.0, 4.0}, {-10.2, 4.0}, {-8.4, 0.0}, {-10.2, -4.0},
+        {-9.0, -4.0}, {-7.0, -2.1}, {-0.2, -2.1}, {-1.2, -8.2},
+        {1.2, -8.2}, {5.0, -1.7}}};
+    const auto vertex = [&](double forward, double right) {
+        glVertex2d(center_x + forward_x * forward + right_x * right,
+                   center_y + forward_y * forward + right_y * right);
+    };
+    glColor4f(0.02F, 0.42F, 1.0F, 1.0F);
+    glBegin(GL_POLYGON);
+    for (const auto& [forward, right] : silhouette) vertex(forward, right);
+    glEnd();
+    glColor4f(0.0F, 0.05F, 0.12F, 1.0F);
+    glLineWidth(3.8F);
+    glBegin(GL_LINE_LOOP);
+    for (const auto& [forward, right] : silhouette) vertex(forward, right);
+    glEnd();
+    glColor4f(0.82F, 0.94F, 1.0F, 1.0F);
+    glLineWidth(1.2F);
+    glBegin(GL_LINE_LOOP);
+    for (const auto& [forward, right] : silhouette) vertex(forward, right);
+    glEnd();
+    glColor4f(0.35F, 0.86F, 1.0F, 1.0F);
+    glLineWidth(1.0F);
+    glBegin(GL_LINES);
+    vertex(11.0, 0.0);
+    vertex(-6.5, 0.0);
+    glEnd();
+    glLineWidth(1.0F);
+
+    char altitude_label[40]{};
+    char approach_label[40]{};
+    std::snprintf(altitude_label, sizeof(altitude_label), "ALT  %.0f FT", altitude_feet);
+    if (approach_altitude_feet > 0)
+        std::snprintf(approach_label, sizeof(approach_label), "APP  %d FT", approach_altitude_feet);
+    const int label_width = approach_altitude_feet > 0 ? 118 : 92;
+    const int label_height = approach_altitude_feet > 0 ? 42 : 26;
+    int label_left = static_cast<int>(center_x) + 18;
+    if (label_left + label_width > static_cast<int>(view_right) - 6)
+        label_left = static_cast<int>(center_x) - label_width - 18;
+    label_left = std::clamp(label_left, static_cast<int>(view_left) + 6,
+                           std::max(static_cast<int>(view_left) + 6,
+                                    static_cast<int>(view_right) - label_width - 6));
+    int label_top = static_cast<int>(center_y) + 15;
+    label_top = std::clamp(label_top,
+        static_cast<int>(view_bottom) + label_height + 6,
+        std::max(static_cast<int>(view_bottom) + label_height + 6,
+                 static_cast<int>(view_top) - 6));
+    const int label_right = label_left + label_width;
+    const int label_bottom = label_top - label_height;
+    glColor4f(0.88F, 0.96F, 1.0F, 1.0F);
+    glBegin(GL_QUADS);
+    glVertex2i(label_left, label_bottom);
+    glVertex2i(label_right, label_bottom);
+    glVertex2i(label_right, label_top);
+    glVertex2i(label_left, label_top);
+    glEnd();
+    glColor4f(0.10F, 0.62F, 1.0F, 1.0F);
+    glLineWidth(1.5F);
+    glBegin(GL_LINE_LOOP);
+    glVertex2i(label_left, label_bottom);
+    glVertex2i(label_right, label_bottom);
+    glVertex2i(label_right, label_top);
+    glVertex2i(label_left, label_top);
+    glEnd();
+    glLineWidth(1.0F);
+    float altitude_color[]{0.015F, 0.08F, 0.16F};
+    XPLMDrawString(altitude_color, label_left + 8, label_top - 17,
+                   altitude_label, nullptr,
+                   xplmFont_Proportional);
+    if (approach_altitude_feet > 0) {
+        float constraint_color[]{0.12F, 0.20F, 0.02F};
+        XPLMDrawString(constraint_color, label_left + 8, label_top - 34,
+                       approach_label, nullptr, xplmFont_Proportional);
+    }
+}
 
 int texture_extent(int value) {
     int extent = 1;
@@ -124,7 +231,9 @@ RenderedPage render_pdf_page(const std::filesystem::path& path, int requested_pa
         std::vector<std::uint8_t> png(static_cast<std::size_t>(byte_count));
         reader.ReadBytes(png);
         page.Close();
-        return decode_png(png, page_index, count);
+        auto rendered = decode_png(png, page_index, count);
+        if (page_index == 0) rendered.geographic_reference = read_geographic_reference(path);
+        return rendered;
     } catch (const winrt::hresult_error& error) {
         return {{}, 0, 0, requested_page, 0,
                 "PDF could not open: " + winrt::to_string(error.message())};
@@ -151,6 +260,7 @@ public:
     void open(std::filesystem::path path) {
         std::lock_guard lock(mutex_);
         path_ = std::move(path);
+        geographic_reference_.reset();
         requested_page_ = 0;
         scroll_offset_ = 0.0;
         visible_ = true;
@@ -195,7 +305,8 @@ public:
                                     0.0, maximum_scroll_);
     }
 
-    void draw(int left, int top, int right, int bottom) {
+    void draw(int left, int top, int right, int bottom,
+              const PdfAircraftOverlay& aircraft) {
         upload_ready();
         if (width_ <= 0 || height_ <= 0) return;
         constexpr int scrollbar_space = 14;
@@ -247,6 +358,30 @@ public:
             glEnd();
         }
         XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0);
+        if (aircraft.available && geographic_reference_) {
+            const auto point = project_geopdf_position(
+                *geographic_reference_, aircraft.latitude_degrees,
+                aircraft.longitude_degrees);
+            if (point) {
+                const double page_width = geographic_reference_->media_box[2] -
+                                          geographic_reference_->media_box[0];
+                const double page_height = geographic_reference_->media_box[3] -
+                                           geographic_reference_->media_box[1];
+                const double source_x = (point->x - geographic_reference_->media_box[0]) /
+                                        page_width * width_;
+                const double source_y = (geographic_reference_->media_box[3] - point->y) /
+                                        page_height * height_;
+                const double aircraft_x = draw_left + source_x * scale;
+                const double aircraft_y = draw_top - (source_y - scroll_offset_) * scale;
+                if (aircraft_x >= draw_left + 14 && aircraft_x <= draw_right - 14 &&
+                    aircraft_y >= draw_bottom + 14 && aircraft_y <= draw_top - 14) {
+                    draw_chart_aircraft(aircraft_x, aircraft_y, aircraft.heading_degrees,
+                                        aircraft.altitude_feet,
+                                        aircraft.approach_altitude_feet,
+                                        draw_left, draw_top, draw_right, draw_bottom);
+                }
+            }
+        }
         if (maximum_scroll_ > 0.0) {
             const double track_left = right - 7.0;
             const double track_right = right - 3.0;
@@ -303,6 +438,7 @@ private:
                                             GpuPixelFormat::bgra);
         width_ = ready.width;
         height_ = ready.height;
+        geographic_reference_ = std::move(ready.geographic_reference);
         {
             std::lock_guard lock(mutex_);
             status_ = uploaded ? "PDF page ready" : "PDF page could not be displayed";
@@ -366,6 +502,7 @@ private:
     int texture_width_{};
     int texture_height_{};
     std::vector<std::uint8_t> fallback_;
+    std::optional<GeoPdfReference> geographic_reference_;
     int fallback_width_{};
     int fallback_height_{};
     int requested_page_{};
@@ -387,8 +524,9 @@ void XPlanePdfViewer::close() { implementation_->close(); }
 void XPlanePdfViewer::previous_page() { implementation_->move(-1); }
 void XPlanePdfViewer::next_page() { implementation_->move(1); }
 void XPlanePdfViewer::scroll(int wheel_clicks) { implementation_->scroll(wheel_clicks); }
-void XPlanePdfViewer::draw(int left, int top, int right, int bottom) {
-    implementation_->draw(left, top, right, bottom);
+void XPlanePdfViewer::draw(int left, int top, int right, int bottom,
+                           const PdfAircraftOverlay& aircraft) {
+    implementation_->draw(left, top, right, bottom, aircraft);
 }
 bool XPlanePdfViewer::visible() const noexcept { return implementation_->visible(); }
 int XPlanePdfViewer::page_number() const noexcept { return implementation_->page_number(); }

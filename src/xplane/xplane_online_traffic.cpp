@@ -166,8 +166,13 @@ void predict_target_position(TrafficTarget& target, double age_seconds) {
 
 std::vector<std::string_view> aircraft_objects(std::string_view json) {
     std::vector<std::string_view> result;
-    const auto ac = json.find("\"ac\"");
-    const auto array = ac == std::string_view::npos ? std::string_view::npos : json.find('[', ac);
+    std::size_t collection = std::string_view::npos;
+    for (const auto key : {"\"ac\"", "\"aircraft\"", "\"planes\""}) {
+        collection = json.find(key);
+        if (collection != std::string_view::npos) break;
+    }
+    const auto array = collection == std::string_view::npos
+        ? std::string_view::npos : json.find('[', collection);
     if (array == std::string_view::npos) return result;
     bool quoted = false;
     bool escaped = false;
@@ -197,18 +202,27 @@ std::vector<std::string_view> aircraft_objects(std::string_view json) {
     return result;
 }
 
-std::vector<TrafficTarget> parse_aircraft(std::string_view json,
-                                          double center_latitude,
-                                          double center_longitude,
-                                          int radius_nm) {
+struct ParsedAircraft {
+    std::vector<TrafficTarget> targets;
+    std::size_t reports{};
+    bool recognized{false};
+};
+
+ParsedAircraft parse_aircraft(std::string_view json,
+                              double center_latitude,
+                              double center_longitude,
+                              int radius_nm) {
     struct Candidate {
         TrafficTarget target;
         double distance{};
     };
     std::vector<Candidate> candidates;
-    for (const auto object : aircraft_objects(json)) {
-        const auto latitude = json_number(object, "lat");
-        const auto longitude = json_number(object, "lon");
+    const auto objects = aircraft_objects(json);
+    for (const auto object : objects) {
+        auto latitude = json_number(object, "lat");
+        auto longitude = json_number(object, "lon");
+        if (!latitude) latitude = json_number(object, "latitude");
+        if (!longitude) longitude = json_number(object, "longitude");
         const auto seen_position = json_number(object, "seen_pos");
         if (!latitude || !longitude || !valid_coordinate(*latitude, *longitude) ||
             (seen_position && *seen_position > 45.0)) continue;
@@ -258,7 +272,10 @@ std::vector<TrafficTarget> parse_aircraft(std::string_view json,
         if (result.size() >= 63) break;
         result.push_back(std::move(candidate.target));
     }
-    return result;
+    return {std::move(result), objects.size(),
+            json.find("\"ac\"") != std::string_view::npos ||
+            json.find("\"aircraft\"") != std::string_view::npos ||
+            json.find("\"planes\"") != std::string_view::npos};
 }
 
 RouteInfo parse_route(std::string_view json) {
@@ -279,7 +296,7 @@ DownloadResult download_aircraft(double latitude, double longitude, int radius_n
     swprintf_s(path, L"/v2/lat/%.5f/lon/%.5f/dist/%d",
         latitude, longitude, radius_nm);
     HINTERNET session = WinHttpOpen(
-        L"OpenEFB/1.0.0-rc28 (+https://github.com/Gbaby4live/OpenEFB)",
+        L"OpenEFB/1.0.0 (+https://github.com/Gbaby4live/OpenEFB)",
         WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) return {false, {}, "ADSB.LOL connection could not start"};
@@ -292,9 +309,20 @@ DownloadResult download_aircraft(double latitude, double longitude, int radius_n
     HINTERNET request = connection ? WinHttpOpenRequest(
         connection, L"GET", path, nullptr, WINHTTP_NO_REFERER,
         WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE) : nullptr;
+#if defined(WINHTTP_OPTION_DECOMPRESSION)
+    if (request) {
+        DWORD decompression = WINHTTP_DECOMPRESSION_FLAG_GZIP |
+                              WINHTTP_DECOMPRESSION_FLAG_DEFLATE;
+        WinHttpSetOption(request, WINHTTP_OPTION_DECOMPRESSION,
+                         &decompression, sizeof(decompression));
+    }
+#endif
     DownloadResult result;
     result.status = connection ? "ADSB.LOL request failed" : "ADSB.LOL host unavailable";
-    if (request && WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+    constexpr wchar_t accept_header[] = L"Accept: application/json\r\n";
+    if (request && WinHttpSendRequest(
+                                      request, accept_header,
+                                      static_cast<DWORD>((sizeof(accept_header) / sizeof(wchar_t)) - 1),
                                       WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
         WinHttpReceiveResponse(request, nullptr)) {
         DWORD status{};
@@ -337,7 +365,7 @@ DownloadResult download_route(const std::string& callsign) {
     const std::string route_path = "/routes/" + callsign.substr(0, 2) + "/" + callsign + ".json";
     const std::wstring path(route_path.begin(), route_path.end());
     HINTERNET session = WinHttpOpen(
-        L"OpenEFB/1.0.0-rc28 (+https://github.com/Gbaby4live/OpenEFB)",
+        L"OpenEFB/1.0.0 (+https://github.com/Gbaby4live/OpenEFB)",
         WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) return {false, {}, "Route connection could not start"};
@@ -507,13 +535,19 @@ private:
                 continue;
             }
             auto response = download_aircraft(latitude, longitude, radius_nm);
-            auto targets = response.success
+            auto parsed = response.success
                 ? parse_aircraft(response.body, latitude, longitude, radius_nm)
-                : std::vector<TrafficTarget>{};
+                : ParsedAircraft{};
             std::lock_guard lock(mutex_);
             if (response.success) {
-                status_ = "ADSB.LOL ONLINE / " + std::to_string(radius_nm) + " NM";
-                targets_ = std::move(targets);
+                status_ = "ADSB.LOL ONLINE / " + std::to_string(radius_nm) + " NM / ";
+                if (!parsed.recognized) {
+                    status_ += "response format not recognized";
+                } else {
+                    status_ += "reports " + std::to_string(parsed.reports) +
+                               " / usable " + std::to_string(parsed.targets.size());
+                }
+                targets_ = std::move(parsed.targets);
                 available_ = true;
                 last_success_ = std::chrono::steady_clock::now();
                 consecutive_failures_ = 0;

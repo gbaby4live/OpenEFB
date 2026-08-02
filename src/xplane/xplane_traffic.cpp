@@ -409,7 +409,8 @@ void XPlaneTraffic::sample() {
         : TrafficSource::simulator;
     std::string status = online.status;
     if (!tcas_available_) status += " / TCAS unavailable";
-    else if (simulator_count == 0) status += " / TCAS 0";
+    else if (owns_tcas_) status += " / injected " + std::to_string(online_count);
+    else if (simulator_count == 0) status += " / external TCAS 0";
     else status += " / TCAS " + std::to_string(simulator_count);
     model_.update(std::move(combined), source, simulator_count, online_count,
                   std::move(status), online.degraded);
@@ -465,8 +466,10 @@ void XPlaneTraffic::update_injection() {
     const auto online = online_traffic_.snapshot();
     const auto& ownship = telemetry_model_.snapshot();
     update_traffic_warning(online.targets, 0.0F);
-    if (online.available && !online.targets.empty() && ownship.available)
-        update_visual_traffic(online.targets);
+    // Use the same blended snapshot shown on the OpenEFB map so simulator
+    // targets and live ADS-B ground/air targets remain visually synchronized.
+    if (!state.targets.empty() && ownship.available)
+        update_visual_traffic(state.targets);
     else
         update_visual_traffic({});
 

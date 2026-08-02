@@ -13,8 +13,8 @@ bool FlightPlanEditor::begin(const FlightPlanSnapshot& source) {
     }
     active_ = true;
     dirty_ = false;
-    source_legs_ = source.legs;
-    legs_ = source.legs;
+    source_legs_ = complete_flight_plan_legs(source);
+    legs_ = source_legs_;
     departure_assigned_ = !legs_.empty();
     destination_assigned_ = legs_.size() >= 2;
     selected_index_ = legs_.empty() ? -1 : 0;
@@ -182,14 +182,15 @@ bool FlightPlanEditor::move_selected_down() {
 }
 
 bool FlightPlanEditor::source_unchanged(const FlightPlanSnapshot& current) const noexcept {
-    return active_ && current.available && equivalent(source_legs_, current.legs);
+    return active_ && current.available &&
+           equivalent(source_legs_, complete_flight_plan_legs(current));
 }
 
 void FlightPlanEditor::set_message(std::string message) { message_ = std::move(message); }
 
 void FlightPlanEditor::mark_applied(const FlightPlanSnapshot& current) {
-    source_legs_ = current.legs;
-    legs_ = current.legs;
+    source_legs_ = complete_flight_plan_legs(current);
+    legs_ = source_legs_;
     departure_assigned_ = !legs_.empty();
     destination_assigned_ = legs_.size() >= 2;
     selected_index_ = legs_.empty() ? -1 : std::min(selected_index_, static_cast<int>(legs_.size()) - 1);

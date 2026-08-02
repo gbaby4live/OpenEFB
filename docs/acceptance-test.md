@@ -254,3 +254,71 @@ failed step. Map/PDF visibility failures are release blockers, not optional poli
     OpenEFB displays a traffic callout and, when X-Plane text-to-speech is enabled,
     speaks clock position, distance, and relative altitude. Confirm it does not
     repeat continuously. Treat this as an OpenEFB warning, not an ATC clearance.
+
+# RC29 approach control and plates
+
+1. Load a route whose first and last airport entries have installed X-Plane
+   CIFP data. Select Flight Plan > Edit, then choose Approach inside Flight Plan
+   Builder and confirm Destination loads by default.
+2. Switch between DEP and DEST. Confirm each airport name/code and the complete
+   installed approach list appear, and use the mouse wheel to reach every entry.
+3. Select an approach. Confirm the opaque premium panel shows procedure type,
+   runway, common fixes, and a vectors/common selection without changing the FMS.
+4. Double-click an approach and confirm its transition picker opens immediately.
+   Use the wheel to reach every published transition, choose one, and confirm the
+   picker closes with the selected transition in the preview. Confirm there is no
+   Transition button at the bottom.
+5. Select Plate at a U.S. airport. If the plate is not local, wait for the refresh
+   message and select Plate again. Confirm the matching approach PDF opens inside
+   OpenEFB and scrolls with the mouse wheel.
+6. Select Apply while parked. Confirm X-Plane shows the selected approach,
+   transition, and runway as a procedure rather than only loose waypoints.
+7. Repeat while airborne. On compatible stock avionics, activate the approach
+   and confirm its altitude constraints are available to VPATH. Do not expect
+   OpenEFB to control a third-party aircraft's private FMC modes.
+8. Apply a different approach without externally editing the route. Confirm the
+   previous OpenEFB approach sequence is replaced instead of duplicated.
+9. Attempt a procedure containing an unresolved fix or one that would exceed
+   100 FMS entries. Confirm Apply refuses the change and shows a useful message.
+10. Resize OpenEFB to its minimum dimensions. Confirm the approach list, selected
+    state, controls, and messages remain clipped inside the opaque panel.
+11. Load a route with more than five FMS entries. Confirm Flight Plan immediately
+    lists the complete route and use the page wheel/scroll rail to reach every leg.
+12. With the intentionally truncated FAA catalog from an older build present,
+    select Refresh. Confirm OpenEFB discards it, downloads a complete catalog,
+    and replaces `Chart Download Status.pdf` with the airport's actual plates.
+13. Open a downloaded FAA approach plate while the aircraft is inside its
+    published geographic extent. Confirm a blue airplane follows live position
+    and true heading on the chart while the mouse wheel scrolls the page. Confirm
+    the badge shows aircraft altitude and the active approach constraint when
+    X-Plane publishes one. Open a non-georeferenced PDF and confirm no aircraft
+    marker is guessed.
+14. Resize OpenEFB to minimum height. Confirm the Briefing page rail reaches the
+    bottom of every tab, and the chart list has its own visible scroll thumb.
+15. Confirm the compact top control reads `Menu`, and Planning plus generated
+    briefing documents show weight and fuel mass only in pounds.
+16. Click one or more procedure fixes in the preview and confirm they change to
+    `REMOVED`; click again to restore one. Apply and confirm both OpenEFB and the
+    X-Plane FMS reflect the edited sequence and continue to the next retained fix.
+17. Apply an unedited procedure and confirm X-Plane no longer warns that the plan
+    was saved with AIRAC cycle 0. Inspect the generated header if needed and
+    confirm it matches X-Plane's active navigation cycle.
+18. Open Briefing > Checklist. Select Preflight, Takeoff/Cruise, and
+    Descent/Landing; verify each has its own offline items and displays the current
+    aircraft name. Confirm Reset affects the active phase.
+19. Open Logbook and click a completed flight. Confirm a solid detail panel shows
+    route, aircraft, completion time, airborne duration, distance, maximum
+    altitude/speed, climb/descent rates, landing rate, and track-point count.
+20. On a white FAA chart, confirm the altitude/constraint badge uses dark legible
+    text and remains inside its box. Confirm the blue ownship silhouette has no
+    shifted color behind its wings or fuselage.
+21. At KSAN, choose ILS RWY 09 Y or Z and the MZB transition. Confirm the preview
+    contains MZB, both sequence-distinct GATTO legs, SARGS, and the final legs.
+    Apply and confirm X-Plane accepts `RW09` without reporting a nonexistent
+    `RW09-Y` or `RW09-Z` runway.
+22. After applying the approach, confirm Approach Control closes back to Flight
+    Plan Builder and every navigable transition/final fix appears before the
+    destination. Select a fix, choose Remove, and Apply the Builder again.
+23. Confirm the removed fix disappears from both the X-Plane FMS and OpenEFB.
+    Select `Flight Plan` (formerly Cancel) and confirm the overview shows every
+    remaining route and approach leg, with mouse-wheel scrolling for long plans.

@@ -9,6 +9,7 @@ namespace openefb {
 
 enum class BriefingTab { summary, library, checklist, notes };
 enum class LibraryCategory { chart, document };
+enum class ChecklistPhase { preflight, takeoff_cruise, descent_landing };
 
 struct LibraryEntry {
     LibraryCategory category{LibraryCategory::document};
@@ -38,6 +39,10 @@ public:
     [[nodiscard]] std::string_view library_airport() const noexcept;
 
     [[nodiscard]] const std::vector<ChecklistItem>& checklist() const noexcept;
+    [[nodiscard]] ChecklistPhase checklist_phase() const noexcept;
+    void select_checklist_phase(ChecklistPhase phase) noexcept;
+    void configure_checklist_for_aircraft(std::string_view aircraft_name);
+    [[nodiscard]] std::string_view checklist_aircraft() const noexcept;
     bool toggle_checklist_item(std::size_t index) noexcept;
     void reset_checklist() noexcept;
     [[nodiscard]] std::size_t completed_checklist_items() const noexcept;
@@ -55,6 +60,8 @@ private:
     std::string library_message_;
     std::string library_airport_;
     std::vector<ChecklistItem> checklist_;
+    ChecklistPhase checklist_phase_{ChecklistPhase::preflight};
+    std::string checklist_aircraft_{"General aircraft"};
     std::string notes_;
 };
 

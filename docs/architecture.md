@@ -53,14 +53,22 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
 
 ## M4: active flight plan
 
-- `FlightPlanModel` owns a normalized, read-only view of the FMS route and marks
+- `FlightPlanModel` owns a normalized view of the FMS route and marks
   the leg X-Plane is currently flying toward.
 - `XPlaneFlightPlan` samples the documented FMS entry API once per second and
   caps input at X-Plane's 100-entry route limit.
 - Flight-plan sampling has its own after-flight-model callback so motion data
   can remain responsive without repeatedly scanning the route.
-- The Flight Plan page shows route endpoints and a window around the active leg;
-  OpenEFB does not modify or program the simulator FMS.
+- The Flight Plan page shows route endpoints and a window around the active leg.
+  Explicit user actions can apply a validated route or a selected installed CIFP
+  approach through the documented FMS APIs. Procedure parsing stays in the
+  simulator-independent core; navaid resolution and all FMS writes remain on the
+  X-Plane main thread. OpenEFB never writes during preview or chart viewing.
+- Destination Apply serializes an X-Plane 1100 flight plan with `DESRWY`, `APP`,
+  and optional `APPTRANS`, then uses `XPLMLoadFMSFlightPlan` so stock avionics
+  receive procedure leg types and altitude constraints for VPATH. The legacy
+  entry writer remains a bounded fallback and never claims to configure a
+  third-party aircraft's private FMC state.
 
 ## M5: route weather
 
@@ -134,9 +142,11 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
 
 ## M9: interactive flight-plan builder
 
-- `FlightPlanEditor` owns a simulator-independent draft copied from the live
-  route. Adding, removing, selecting, and reordering legs never changes the FMS
-  until the user explicitly chooses Apply.
+- `FlightPlanEditor` owns a simulator-independent draft copied from the complete
+  live route. X-Plane's separately exposed native approach legs are merged ahead
+  of the destination, while non-navigable vector/discontinuity records stay out
+  of the editable sequence. Adding, removing, selecting, and reordering legs
+  never changes the FMS until the user explicitly chooses Apply.
 - Draft input accepts normalized waypoint identifiers and caps routes at
   X-Plane's documented 100-entry limit. Core tests cover editing operations,
   identifier normalization, cancellation, and external-change detection.
@@ -147,7 +157,9 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
   and pre-validates every draft leg before making any FMS write.
 - Apply is rejected if the live route changed since the draft was opened. A
   successful write preserves the nearest valid displayed and active-leg indices,
-  clears obsolete trailing entries, and immediately refreshes the live model.
+  clears obsolete trailing entries and any superseded native approach layer, and
+  immediately refreshes the live model. The overview uses the same merged route,
+  so Builder, Flight Plan, and FMS cannot present different leg sets.
 - Keyboard focus and mouse hit testing stay in the window adapter. Typing and
   Enter add identifiers, arrow keys or the wheel select rows, and dedicated
   controls reorder or remove the selected leg.
@@ -240,6 +252,11 @@ window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
 - A chart-status PDF remains visible when the FAA catalog, airport record, or
   individual downloads are unavailable, so an empty chart folder is explained
   without relying on an external text viewer.
+- The GeoPDF adapter reads FAA `/VP`, `/BBox`, `/GPTS`, `/LPTS`, and `/MediaBox`
+  calibration arrays in the core. The PDF viewer projects live simulator
+  coordinates into page space after raster scaling and scroll offset, then draws
+  a blue ownship and altitude badge only while that position is inside the
+  published chart extent. Ordinary PDFs never receive a guessed overlay.
 
 ## 1.0 raster presentation
 

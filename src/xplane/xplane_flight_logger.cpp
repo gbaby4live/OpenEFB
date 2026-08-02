@@ -70,7 +70,8 @@ void XPlaneFlightLogger::load_history() {
         std::ifstream input(history_path_);
         std::string signature;
         int version{};
-        if (!(input >> signature >> version) || signature != "OpenEFBFlightLog" || version != 1) {
+        if (!(input >> signature >> version) || signature != "OpenEFBFlightLog" ||
+            (version != 1 && version != 2)) {
             return;
         }
         std::string record;
@@ -83,8 +84,11 @@ void XPlaneFlightLogger::load_history() {
                         >> std::quoted(entry.departure)
                         >> std::quoted(entry.destination)
                         >> entry.airborne_seconds >> entry.distance_nm
-                        >> entry.maximum_altitude_feet >> entry.landing_vertical_speed_fpm
-                        >> track_count) || track_count > 4096) break;
+                        >> entry.maximum_altitude_feet >> entry.landing_vertical_speed_fpm)) break;
+            if (version >= 2 && !(input >> entry.maximum_ground_speed_knots
+                                      >> entry.maximum_climb_rate_fpm
+                                      >> entry.maximum_descent_rate_fpm)) break;
+            if (!(input >> track_count) || track_count > 4096) break;
             bool complete = true;
             for (std::size_t index = 0; index < track_count; ++index) {
                 FlightTrackPoint point;
@@ -113,7 +117,7 @@ void XPlaneFlightLogger::save_history() const {
         const auto temporary = history_path_.string() + ".tmp";
         {
             std::ofstream output(temporary, std::ios::trunc);
-            output << "OpenEFBFlightLog 1\n";
+            output << "OpenEFBFlightLog 2\n";
             output << std::setprecision(10);
             for (const auto& entry : model_.snapshot().entries) {
                 output << "F " << std::quoted(entry.completed_utc) << ' '
@@ -123,6 +127,9 @@ void XPlaneFlightLogger::save_history() const {
                        << entry.airborne_seconds << ' ' << entry.distance_nm << ' '
                        << entry.maximum_altitude_feet << ' '
                        << entry.landing_vertical_speed_fpm << ' '
+                       << entry.maximum_ground_speed_knots << ' '
+                       << entry.maximum_climb_rate_fpm << ' '
+                       << entry.maximum_descent_rate_fpm << ' '
                        << entry.track.size() << '\n';
                 for (const auto& point : entry.track) {
                     output << "P " << point.latitude_degrees << ' '

@@ -7,10 +7,27 @@
 namespace openefb {
 namespace { constexpr std::size_t maximum_note_length = 2000; }
 
-BriefingModel::BriefingModel()
-    : checklist_{{"Flight plan reviewed"}, {"Departure and destination weather reviewed"},
-                 {"Fuel and reserve checked"}, {"Weight and balance checked"},
-                 {"Required charts available"}, {"Aircraft documents reviewed"}} {}
+namespace {
+std::vector<ChecklistItem> checklist_for(ChecklistPhase phase) {
+    switch (phase) {
+    case ChecklistPhase::preflight:
+        return {{"Aircraft documents and condition checked"}, {"Fuel quantity and reserve verified"},
+                {"Weight, balance, and performance verified"}, {"Flight plan, weather, and NOTAMs reviewed"},
+                {"Controls, trim, and flight instruments checked"}, {"Doors, restraints, and parking brake set"}};
+    case ChecklistPhase::takeoff_cruise:
+        return {{"Takeoff briefing and runway confirmed"}, {"Flight controls and trim set"},
+                {"Flaps and takeoff configuration set"}, {"Power and engine indications checked"},
+                {"Navigation, altitude, and route monitored"}, {"Fuel balance and systems checked in cruise"}};
+    case ChecklistPhase::descent_landing:
+        return {{"Arrival, approach, weather, and minimums reviewed"}, {"Landing performance and runway confirmed"},
+                {"Altimeters, navigation source, and bugs set"}, {"Cabin, lights, and descent configuration set"},
+                {"Gear and landing configuration confirmed"}, {"After landing: flaps, lights, and transponder set"}};
+    }
+    return {};
+}
+}
+
+BriefingModel::BriefingModel() : checklist_(checklist_for(checklist_phase_)) {}
 
 BriefingTab BriefingModel::active_tab() const noexcept { return active_tab_; }
 void BriefingModel::select_tab(BriefingTab tab) noexcept { active_tab_ = tab; }
@@ -56,6 +73,16 @@ void BriefingModel::select_library_airport(std::string identifier) {
 
 std::string_view BriefingModel::library_airport() const noexcept { return library_airport_; }
 const std::vector<ChecklistItem>& BriefingModel::checklist() const noexcept { return checklist_; }
+ChecklistPhase BriefingModel::checklist_phase() const noexcept { return checklist_phase_; }
+void BriefingModel::select_checklist_phase(ChecklistPhase phase) noexcept {
+    if (phase == checklist_phase_) return;
+    checklist_phase_ = phase;
+    checklist_ = checklist_for(phase);
+}
+void BriefingModel::configure_checklist_for_aircraft(std::string_view aircraft_name) {
+    if (!aircraft_name.empty()) checklist_aircraft_ = std::string(aircraft_name);
+}
+std::string_view BriefingModel::checklist_aircraft() const noexcept { return checklist_aircraft_; }
 
 bool BriefingModel::toggle_checklist_item(std::size_t index) noexcept {
     if (index >= checklist_.size()) return false;

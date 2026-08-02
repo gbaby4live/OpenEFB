@@ -33,6 +33,9 @@ void FlightLogModel::complete_flight(const TelemetrySnapshot& telemetry,
                          snapshot_.departure, snapshot_.destination,
                          snapshot_.airborne_seconds, snapshot_.distance_nm,
                          snapshot_.maximum_altitude_feet, telemetry.vertical_speed_fpm,
+                         snapshot_.maximum_ground_speed_knots,
+                         snapshot_.maximum_climb_rate_fpm,
+                         snapshot_.maximum_descent_rate_fpm,
                          std::move(current_track_)};
     snapshot_.last_landing_vertical_speed_fpm = telemetry.vertical_speed_fpm;
     snapshot_.entries.insert(snapshot_.entries.begin(), std::move(entry));
@@ -50,6 +53,12 @@ void FlightLogModel::update(const TelemetrySnapshot& telemetry, const FlightPlan
     if (snapshot_.airborne && elapsed_seconds > 0.0) {
         snapshot_.airborne_seconds += static_cast<int>(std::lround(elapsed_seconds));
         snapshot_.maximum_altitude_feet = std::max(snapshot_.maximum_altitude_feet, telemetry.altitude_feet);
+        snapshot_.maximum_ground_speed_knots = std::max(snapshot_.maximum_ground_speed_knots,
+                                                        telemetry.ground_speed_knots);
+        snapshot_.maximum_climb_rate_fpm = std::max(snapshot_.maximum_climb_rate_fpm,
+                                                    telemetry.vertical_speed_fpm);
+        snapshot_.maximum_descent_rate_fpm = std::min(snapshot_.maximum_descent_rate_fpm,
+                                                      telemetry.vertical_speed_fpm);
         if (has_previous_position_) {
             const double segment = distance_nm(previous_latitude_, previous_longitude_,
                                                telemetry.latitude_degrees, telemetry.longitude_degrees);
@@ -75,6 +84,9 @@ void FlightLogModel::update(const TelemetrySnapshot& telemetry, const FlightPlan
         snapshot_.airborne_seconds = 0;
         snapshot_.distance_nm = 0.0;
         snapshot_.maximum_altitude_feet = telemetry.altitude_feet;
+        snapshot_.maximum_ground_speed_knots = telemetry.ground_speed_knots;
+        snapshot_.maximum_climb_rate_fpm = std::max(0.0, telemetry.vertical_speed_fpm);
+        snapshot_.maximum_descent_rate_fpm = std::min(0.0, telemetry.vertical_speed_fpm);
         current_track_.clear();
         current_track_.push_back({telemetry.latitude_degrees,
                                   telemetry.longitude_degrees,
@@ -89,6 +101,9 @@ void FlightLogModel::update(const TelemetrySnapshot& telemetry, const FlightPlan
         snapshot_.airborne_seconds = 0;
         snapshot_.distance_nm = 0.0;
         snapshot_.maximum_altitude_feet = 0.0;
+        snapshot_.maximum_ground_speed_knots = 0.0;
+        snapshot_.maximum_climb_rate_fpm = 0.0;
+        snapshot_.maximum_descent_rate_fpm = 0.0;
     }
     snapshot_.revision = next_revision_++;
 }
@@ -104,6 +119,9 @@ void FlightLogModel::reset_current_flight() noexcept {
     snapshot_.airborne_seconds = 0;
     snapshot_.distance_nm = 0.0;
     snapshot_.maximum_altitude_feet = 0.0;
+    snapshot_.maximum_ground_speed_knots = 0.0;
+    snapshot_.maximum_climb_rate_fpm = 0.0;
+    snapshot_.maximum_descent_rate_fpm = 0.0;
     current_track_.clear();
     snapshot_.revision = next_revision_++;
 }

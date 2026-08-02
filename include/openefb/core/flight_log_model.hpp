@@ -25,6 +25,9 @@ struct FlightLogEntry {
     double distance_nm{};
     double maximum_altitude_feet{};
     double landing_vertical_speed_fpm{};
+    double maximum_ground_speed_knots{};
+    double maximum_climb_rate_fpm{};
+    double maximum_descent_rate_fpm{};
     std::vector<FlightTrackPoint> track;
 };
 
@@ -37,6 +40,9 @@ struct FlightLogSnapshot {
     int airborne_seconds{};
     double distance_nm{};
     double maximum_altitude_feet{};
+    double maximum_ground_speed_knots{};
+    double maximum_climb_rate_fpm{};
+    double maximum_descent_rate_fpm{};
     double last_landing_vertical_speed_fpm{};
     std::vector<FlightLogEntry> entries;
     std::uint64_t revision{};
