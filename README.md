@@ -144,8 +144,8 @@ for the visible map tiles and ensures every button, card, navigation row, and
 page surface has a real solid fill on Vulkan/Zink instead of a hollow outline.
 
 Fuel flow is displayed in US gallons per hour using the standard avgas density
-of 6.0 lb per US gallon. Remaining fuel mass stays visible in kilograms and
-pounds because X-Plane reports fuel internally by mass.
+of 6.0 lb per US gallon. All user-facing weight and fuel-mass values are shown
+in pounds; OpenEFB converts X-Plane's internal metric values at presentation time.
 
 Home now contains a large bordered live-map panel without taking over the full
 page. On Windows, it loads OpenStreetMap Street tiles by default and offers a
@@ -273,3 +273,69 @@ clock-position, distance, and relative-altitude callout. X-Plane displays and
 speaks that callout according to the user's text-to-speech preferences. This is
 an EFB safety aid, not a native ATC instruction; equipped aircraft on X-Plane
 12.4.1 or newer can independently generate native TCAS TA/RA advisories.
+
+RC29 adds a premium Approach Control panel to Flight Plan. Departure and
+destination selectors load every approach and transition published in the
+installed X-Plane CIFP database. The panel previews the procedure name, runway,
+transition, and navigable fix sequence before Apply writes anything. For a
+destination approach on X-Plane 12.1 or newer, Apply uses X-Plane's documented
+procedure-aware FMS loader with the published approach, transition, and runway.
+That preserves procedure leg types and altitude constraints needed by compatible
+stock avionics to calculate VPATH. The validated fix-sequence writer remains a
+fallback for older SDKs and departure-endpoint previews. Applying is supported
+while parked or airborne, preserves the remaining route, and enforces X-Plane's
+100-entry route limit. Aircraft-specific third-party FMCs may still require their
+own procedure activation step.
+
+Plate opens the closest matching chart already in the local Briefing Library.
+If it is missing, OpenEFB starts a fresh endpoint archive and FAA chart download;
+select Plate again after synchronization. OpenEFB rejects and retries truncated
+FAA catalogs instead of caching them as a successful cycle. Automatic official
+downloads cache every published plate for active U.S. departure and destination
+airports and retain visited-airport charts for offline use; a new FAA cycle
+refreshes them. Bulk-bundling every major airport worldwide is intentionally not
+done because coverage, redistribution rights, and update cycles vary by country.
+Other regions use pilot-provided or separately licensed PDFs saved under
+`Library/Charts/<ICAO>`.
+
+Version 1.0.0 is the stable OpenEFB desktop release for X-Plane 12. The mobile
+companion application is planned as the next product phase.
+
+FAA GeoPDF approach plates and airport charts can show the live aircraft as a
+blue airplane directly on the opened chart. The marker uses the plate's embedded
+geographic calibration, follows true position and heading through the published
+approach vicinity, and displays live altitude plus the active X-Plane approach
+constraint when available. Non-georeferenced PDFs remain unmodified rather than
+showing an estimated position. The chart list and full Briefing page provide
+visible scroll rails and mouse-wheel access at compact window sizes. The compact
+navigation control is labeled `Menu`.
+
+The final 1.0 interaction pass places Approach inside Flight Plan Builder and
+opens the published transition picker by double-clicking an approach; the old
+Transition button is removed. Selected
+procedure fixes can be excluded or restored in the preview before Apply. An
+unmodified destination procedure continues to use X-Plane's native loader,
+while an intentionally edited procedure is written as a clearly identified
+custom fix sequence. Generated plans read the active AIRAC cycle from X-Plane's
+navigation database, preventing the former `CYCLE 0000` mismatch warning.
+
+Briefing now includes fully offline Preflight, Takeoff/Cruise, and
+Descent/Landing general checklists labeled with the current aircraft. They are
+operational aids and do not replace the aircraft's approved POH/AFM. Clicking a
+saved logbook flight opens its route, duration, distance, altitude, speed,
+climb/descent, landing-rate, and track-point details. Chart ownship labels use a
+high-contrast light badge with dark text, and both chart and map ownship symbols
+use a clean centered outline without a displaced fill shadow.
+
+X-Plane CIFP approach variants such as KSAN `I09-Y` and `I09-Z` retain their
+full procedure identifiers while the generated plan correctly targets runway
+`RW09`. Transition previews preserve repeated, sequence-distinct fixes such as
+procedure-turn legs and can be mouse-wheel scrolled independently.
+
+Flight Plan Builder is now the authoritative route editor. After an approach is
+applied, its navigable transition and final fixes appear in the Builder ahead of
+the destination and can be selected, moved, or removed. Applying the edited
+draft clears the prior native approach layer and writes the complete revised
+sequence to X-Plane, so OpenEFB and the FMS cannot retain different copies. The
+former Cancel control is labeled `Flight Plan` and returns to an overview that
+always lists every route and approach leg with page scrolling.

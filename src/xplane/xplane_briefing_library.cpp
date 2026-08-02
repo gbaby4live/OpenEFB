@@ -27,6 +27,11 @@ constexpr auto automatic_refresh_interval = std::chrono::minutes(5);
 constexpr std::size_t maximum_catalog_size = 48 * 1024 * 1024;
 constexpr std::size_t maximum_chart_size = 24 * 1024 * 1024;
 
+bool valid_faa_catalog(std::string_view catalog) {
+    return catalog.size() > 1024 && catalog.find("<digital_tpp ") != std::string_view::npos &&
+           catalog.rfind("</digital_tpp>") != std::string_view::npos;
+}
+
 std::string lowercase(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
         return static_cast<char>(std::tolower(character));
@@ -183,11 +188,11 @@ struct FaaDownload {
 };
 
 FaaDownload download_faa_file(const std::wstring& path, std::size_t maximum_size) {
-    HINTERNET session = WinHttpOpen(L"OpenEFB/1.0.0-rc28 (+https://github.com/Gbaby4live/OpenEFB)",
+    HINTERNET session = WinHttpOpen(L"OpenEFB/1.0.0 (+https://github.com/Gbaby4live/OpenEFB)",
                                     WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) return {{}, "WinHTTP session error " + std::to_string(GetLastError())};
-    WinHttpSetTimeouts(session, 4000, 4000, 8000, 8000);
+    WinHttpSetTimeouts(session, 5000, 5000, 30000, 30000);
     DWORD secure_protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
     WinHttpSetOption(session, WINHTTP_OPTION_SECURE_PROTOCOLS,
                      &secure_protocols, sizeof(secure_protocols));
@@ -207,9 +212,21 @@ FaaDownload download_faa_file(const std::wstring& path, std::size_t maximum_size
                                 WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size,
                                 WINHTTP_NO_HEADER_INDEX) && status == 200) {
             result.status = "FAA HTTP 200";
+            DWORD expected_size{};
+            DWORD expected_size_length = sizeof(expected_size);
+            const bool has_expected_size = WinHttpQueryHeaders(
+                request, WINHTTP_QUERY_CONTENT_LENGTH | WINHTTP_QUERY_FLAG_NUMBER,
+                WINHTTP_HEADER_NAME_BY_INDEX, &expected_size, &expected_size_length,
+                WINHTTP_NO_HEADER_INDEX) != FALSE;
             for (;;) {
                 DWORD available{};
-                if (!WinHttpQueryDataAvailable(request, &available) || available == 0) break;
+                if (!WinHttpQueryDataAvailable(request, &available)) {
+                    result.data.clear();
+                    result.status = "FAA response ended early (error " +
+                                    std::to_string(GetLastError()) + ")";
+                    break;
+                }
+                if (available == 0) break;
                 if (result.data.size() + available > maximum_size) {
                     result.data.clear();
                     result.status = "FAA file exceeded the safe download limit";
@@ -224,6 +241,13 @@ FaaDownload download_faa_file(const std::wstring& path, std::size_t maximum_size
                     break;
                 }
                 result.data.resize(offset + read);
+            }
+            if (has_expected_size && !result.data.empty() &&
+                result.data.size() != expected_size) {
+                result.status = "FAA response was incomplete (" +
+                    std::to_string(result.data.size()) + " of " +
+                    std::to_string(expected_size) + " bytes)";
+                result.data.clear();
             }
         } else if (status != 0) {
             result.status = "FAA HTTP " + std::to_string(status);
@@ -305,9 +329,25 @@ void XPlaneBriefingLibrary::stop() {
 }
 
 void XPlaneBriefingLibrary::refresh() {
+    ArchiveRequest request;
+    const auto& flight_plan = flight_plan_model_.snapshot();
+    for (const auto& leg : flight_plan.legs) {
+        if (leg.kind != WaypointKind::airport) continue;
+        if (request.departure.empty()) request.departure = leg.identifier;
+        request.destination = leg.identifier;
+        request.route.push_back(leg.identifier);
+    }
+    if (!request.departure.empty() && !request.destination.empty()) {
+        request.route.clear();
+        for (const auto& leg : flight_plan.legs) request.route.push_back(leg.identifier);
+        request.weather = weather_model_.snapshot();
+        request.planning = planning_model_.snapshot();
+    }
     {
         std::lock_guard lock(mutex_);
         refresh_requested_ = true;
+        if (!request.departure.empty() && !request.destination.empty())
+            pending_archive_ = std::move(request);
     }
     condition_.notify_one();
 }
@@ -396,15 +436,28 @@ void XPlaneBriefingLibrary::archive(const ArchiveRequest& request) {
     std::string catalog_status = "saved catalog";
     const auto catalog_path = directory_ / "faa-cache" / ("d-TPP_Metafile-" + cycle + ".xml");
     catalog = read_text(catalog_path, maximum_catalog_size);
+    if (!catalog.empty() && !valid_faa_catalog(catalog)) {
+        catalog.clear();
+        catalog_status = "discarded an incomplete saved FAA catalog";
+        std::error_code ignored;
+        std::filesystem::remove(catalog_path, ignored);
+    }
     if (catalog.empty() && !stopping_) {
         const std::wstring remote = L"/d-tpp/" + std::wstring(cycle.begin(), cycle.end()) +
                                     L"/xml_data/d-TPP_Metafile.xml";
-        const auto downloaded = download_faa_file(remote, maximum_catalog_size);
-        catalog_status = downloaded.status;
-        if (!downloaded.data.empty()) {
-            catalog.assign(reinterpret_cast<const char*>(downloaded.data.data()),
-                           downloaded.data.size());
-            write_binary(catalog_path, downloaded.data);
+        for (int attempt = 1; attempt <= 3 && catalog.empty() && !stopping_; ++attempt) {
+            const auto downloaded = download_faa_file(remote, maximum_catalog_size);
+            catalog_status = downloaded.status + " (attempt " + std::to_string(attempt) + ")";
+            if (downloaded.data.empty()) continue;
+            std::string candidate(reinterpret_cast<const char*>(downloaded.data.data()),
+                                  downloaded.data.size());
+            if (!valid_faa_catalog(candidate)) {
+                catalog_status = "FAA catalog download was incomplete (attempt " +
+                                 std::to_string(attempt) + ")";
+                continue;
+            }
+            if (write_binary(catalog_path, downloaded.data)) catalog = std::move(candidate);
+            else catalog_status = "FAA catalog could not be saved";
         }
     }
 
@@ -428,14 +481,20 @@ void XPlaneBriefingLibrary::archive(const ArchiveRequest& request) {
             ? request.weather.departure : request.weather.destination;
         briefing << "METAR: " << (airport_weather.metar.empty() ? "Unavailable" : airport_weather.metar) << "\n";
         if (request.planning.available) {
-            briefing << "Gross weight: " << request.planning.loading.gross_weight_kg << " kg\n"
-                     << "Fuel: " << request.planning.loading.fuel_weight_kg << " kg\n"
+            constexpr double pounds_per_kilogram = 2.2046226218;
+            briefing << "Gross weight: "
+                     << request.planning.loading.gross_weight_kg * pounds_per_kilogram << " lb\n"
+                     << "Fuel: "
+                     << request.planning.loading.fuel_weight_kg * pounds_per_kilogram << " lb\n"
                      << "Reserve: " << request.planning.reserve_minutes << " minutes\n";
             if (request.planning.fuel_plan_available) {
-                briefing << "Trip fuel: " << request.planning.trip_fuel_kg << " kg\n"
-                         << "Fuel margin: " << request.planning.fuel_margin_kg << " kg\n"
+                briefing << "Trip fuel: "
+                         << request.planning.trip_fuel_kg * pounds_per_kilogram << " lb\n"
+                         << "Fuel margin: "
+                         << request.planning.fuel_margin_kg * pounds_per_kilogram << " lb\n"
                          << "Predicted landing weight: "
-                         << request.planning.predicted_landing_weight_kg << " kg\n";
+                         << request.planning.predicted_landing_weight_kg * pounds_per_kilogram
+                         << " lb\n";
             }
         }
         briefing << "\nSimulator planning aid only. Verify current official aviation information.\n";
@@ -466,7 +525,16 @@ void XPlaneBriefingLibrary::archive(const ArchiveRequest& request) {
             continue;
         }
         const auto marker_path = chart_folder / ".faa-cycle";
-        if (read_text(marker_path, 32) == cycle) continue;
+        if (read_text(marker_path, 32) == cycle) {
+            const bool complete_cache = std::all_of(charts.begin(), charts.end(), [&](const auto& chart) {
+                const auto stem = std::filesystem::path(chart.pdf_name).stem().string();
+                const auto filename = safe_filename(
+                    chart.code + " - " + chart.name + " [" + stem + "]") + ".pdf";
+                std::error_code error;
+                return std::filesystem::is_regular_file(chart_folder / filename, error) && !error;
+            });
+            if (complete_cache) continue;
+        }
         bool complete = true;
         std::size_t downloaded_count{};
         std::string last_download_status;

@@ -433,7 +433,10 @@ void draw_flight_plan_editor(const FlightPlanEditor& editor,
                              int left, int top, int right, int bottom) {
     const int card_right = responsive_card_right(left, right, 420);
     draw_text(left, top, "Flight Plan Builder", text_primary, xplmFont_Proportional);
-    draw_text(left, top - 27, editor.message(), text_muted);
+    draw_button(card_right - 108, top + 8, card_right, top - 25, "Approach", true);
+    std::string editor_message(editor.message());
+    if (editor_message.size() > 62) editor_message = editor_message.substr(0, 59) + "...";
+    draw_text(left, top - 27, editor_message, text_muted);
 
     const int endpoint_gap = 8;
     const int endpoint_middle = (left + card_right) / 2;
@@ -465,7 +468,7 @@ void draw_flight_plan_editor(const FlightPlanEditor& editor,
     draw_button(left + 64, top - action_top_offset, left + 132, top - action_bottom_offset, "Down");
     draw_button(left + 140, top - action_top_offset, left + 222, top - action_bottom_offset, "Remove");
     draw_button(card_right - 158, top - action_top_offset, card_right - 84,
-                top - action_bottom_offset, "Cancel");
+                top - action_bottom_offset, "Flight Plan");
     draw_button(card_right - 76, top - action_top_offset, card_right,
                 top - action_bottom_offset, "Apply", editor.dirty());
 
@@ -507,16 +510,23 @@ void draw_flight_plan_editor(const FlightPlanEditor& editor,
 void draw_flight_plan_page(const FlightPlanSnapshot& flight_plan,
                            const FlightPlanEditor& editor,
                            std::string_view route_file_message,
+                           bool expanded,
                            int left, int top, int right, int bottom) {
     const int card_right = responsive_card_right(left, right);
     if (editor.active()) {
         draw_flight_plan_editor(editor, left, top, right, bottom);
         return;
     }
+    static_cast<void>(expanded);
+    const auto display_legs = complete_flight_plan_legs(flight_plan);
     draw_text(left, top, "Flight Plan", text_primary, xplmFont_Proportional);
-    draw_button(card_right - 338, top + 8, card_right - 224, top - 23, "Import latest");
-    draw_button(card_right - 216, top + 8, card_right - 90, top - 23, "Export .fms");
-    draw_button(card_right - 82, top + 8, card_right, top - 23, "Edit", true);
+    const int toolbar_left = std::max(left + 112, card_right - 306);
+    const int toolbar_width = std::max(60, (card_right - toolbar_left - 12) / 3);
+    draw_button(toolbar_left, top + 8, toolbar_left + toolbar_width, top - 23, "Import");
+    draw_button(toolbar_left + toolbar_width + 6, top + 8,
+                toolbar_left + toolbar_width * 2 + 6, top - 23, "Export");
+    draw_button(toolbar_left + toolbar_width * 2 + 12, top + 8,
+                card_right, top - 23, "Edit", true);
 
     if (!route_file_message.empty()) {
         draw_text(left, top - 28, route_file_message, accent);
@@ -528,30 +538,32 @@ void draw_flight_plan_page(const FlightPlanSnapshot& flight_plan,
                   "Route status", "Flight-plan service is starting");
         return;
     }
-    if (flight_plan.legs.empty()) {
+    if (display_legs.empty()) {
         if (route_file_message.empty()) draw_text(left, top - 28, "No active route is loaded.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
                   "X-Plane FMS", "Select Edit to create a route from waypoint identifiers");
         return;
     }
 
-    const auto& first = flight_plan.legs.front();
-    const auto& last = flight_plan.legs.back();
+    const auto& first = display_legs.front();
+    const auto& last = display_legs.back();
+    const auto active_leg = std::find_if(display_legs.begin(), display_legs.end(),
+                                         [](const auto& leg) { return leg.active; });
+    const int active_display = active_leg == display_legs.end() ? 0 :
+        static_cast<int>(std::distance(display_legs.begin(), active_leg)) + 1;
     char summary[128]{};
     std::snprintf(summary, sizeof(summary), "Departure %s  |  Destination %s  |  %zu legs  |  Active %d",
-                  first.identifier.c_str(), last.identifier.c_str(), flight_plan.legs.size(),
-                  flight_plan.active_leg_index >= 0 ? flight_plan.active_leg_index + 1 : 0);
+                  first.identifier.c_str(), last.identifier.c_str(), display_legs.size(),
+                  active_display);
     draw_text(left, top - (route_file_message.empty() ? 28 : 50), summary, text_muted);
 
-    const int active = std::clamp(flight_plan.active_leg_index, 0,
-                                  static_cast<int>(flight_plan.legs.size()) - 1);
-    const std::size_t start = active > 1 ? static_cast<std::size_t>(active - 1) : 0U;
-    const std::size_t visible_count = std::min<std::size_t>(5, flight_plan.legs.size() - start);
+    const std::size_t start = 0;
+    const std::size_t visible_count = display_legs.size();
     constexpr int row_height = 48;
     constexpr int row_gap = 6;
     int row_top = top - (route_file_message.empty() ? 58 : 78);
     for (std::size_t offset = 0; offset < visible_count; ++offset) {
-        const auto& leg = flight_plan.legs[start + offset];
+        const auto& leg = display_legs[start + offset];
         draw_rectangle(left, row_top, card_right, row_top - row_height,
                        leg.active ? active_navigation : card);
         std::string label = (leg.active ? ">  " : "   ") + std::to_string(leg.index + 1) + "  " + leg.identifier;
@@ -563,10 +575,197 @@ void draw_flight_plan_page(const FlightPlanSnapshot& flight_plan,
         row_top -= row_height + row_gap;
     }
 
-    const std::size_t remaining = flight_plan.legs.size() - start - visible_count;
-    if (remaining > 0) {
-        draw_text(left + 14, row_top - 12, "+ " + std::to_string(remaining) + " more legs", text_muted);
+}
+
+std::pair<std::string, std::string> briefing_airports(
+    const FlightPlanSnapshot& flight_plan);
+std::vector<std::string> wrap_text(std::string_view value,
+                                   std::size_t maximum_characters);
+
+const ApproachProcedure* selected_approach(const AirportInfoSnapshot& airport,
+                                           std::string_view identifier) {
+    const auto found = std::find_if(
+        airport.procedures.approach_details.begin(),
+        airport.procedures.approach_details.end(), [&](const auto& procedure) {
+            return procedure.identifier == identifier;
+        });
+    return found == airport.procedures.approach_details.end() ? nullptr : &*found;
+}
+
+std::size_t approach_visible_count(int list_top, int list_bottom) {
+    return static_cast<std::size_t>(std::max(2, (list_top - list_bottom) / 42));
+}
+
+struct ApproachFixPreview {
+    std::string key;
+    std::string label;
+};
+
+std::vector<ApproachFixPreview> approach_fix_names(const ApproachProcedure& approach,
+                                                    int selected_transition) {
+    std::vector<ApproachFixPreview> fixes;
+    const auto append = [&](const ApproachLeg& leg, std::string_view group) {
+        if (leg.identifier.empty()) return;
+        const std::string key = leg.identifier + "#" + std::to_string(leg.sequence);
+        std::string label(group);
+        label += " " + std::to_string(leg.sequence) + "  " + leg.identifier;
+        if (!leg.path_terminator.empty()) label += "  " + leg.path_terminator;
+        if (leg.altitude_feet > 0) label += "  " + std::to_string(leg.altitude_feet) + " FT";
+        fixes.push_back({key, std::move(label)});
+    };
+    if (selected_transition > 0 &&
+        selected_transition <= static_cast<int>(approach.transitions.size())) {
+        for (const auto& leg : approach.transitions[
+                 static_cast<std::size_t>(selected_transition - 1)].legs)
+            append(leg, "T");
     }
+    for (const auto& leg : approach.final_legs) append(leg, "F");
+    return fixes;
+}
+
+void draw_approach_panel(const AirportInfoSnapshot& airport,
+                         const FlightPlanSnapshot& flight_plan,
+                         bool destination_endpoint,
+                         std::string_view selected_identifier,
+                         int selected_transition,
+                         bool transition_picker_open,
+                         const std::vector<std::string>& excluded_fixes,
+                         int scroll,
+                         int fix_scroll,
+                         std::string_view message,
+                         int left, int top, int right, int bottom) {
+    const int panel_right = responsive_card_right(left, right, 420);
+    const int panel_bottom = bottom + 22;
+    draw_rectangle(left - 5, top + 5, panel_right + 5, panel_bottom - 5, status_bar);
+    draw_rectangle(left, top, panel_right, panel_bottom, Color{0.075F, 0.105F, 0.130F, 1.0F});
+    draw_border(left, top, panel_right, panel_bottom, accent, 2.0F);
+    draw_tactical_corners(left, top, panel_right, panel_bottom, connected, 13);
+    draw_text(left + 16, top - 25, "APPROACH CONTROL", text_primary, xplmFont_Proportional);
+    draw_text(left + 176, top - 25, "Installed X-Plane navigation procedures", text_muted);
+
+    const auto [departure, destination] = briefing_airports(flight_plan);
+    const int endpoint_width = std::max(100, (panel_right - left - 38) / 2);
+    draw_button(left + 14, top - 42, left + 14 + endpoint_width, top - 76,
+                departure.empty() ? "DEP --" : "DEP  " + departure,
+                !destination_endpoint);
+    draw_button(left + 24 + endpoint_width, top - 42, panel_right - 14, top - 76,
+                destination.empty() ? "DEST --" : "DEST  " + destination,
+                destination_endpoint);
+
+    std::string status;
+    if (airport.state == AirportLookupState::loading) status = "Loading installed CIFP procedures...";
+    else if (airport.state != AirportLookupState::ready) status = airport.message;
+    else status = airport.identifier + "  " + airport.name + "  |  " +
+                  std::to_string(airport.procedures.approach_count) + " approaches";
+    draw_text(left + 16, top - 99, shortened(status, 78),
+              airport.state == AirportLookupState::ready ? accent : text_muted);
+
+    const int actions_top = panel_bottom + 52;
+    const int actions_bottom = panel_bottom + 18;
+    const int list_top = top - 113;
+    const int list_bottom = actions_top + 12;
+    const bool compact = panel_right - left < 520;
+    const int list_right = left + (panel_right - left) * 45 / 100;
+    const auto& approaches = airport.procedures.approach_details;
+    const auto* selected = selected_approach(airport, selected_identifier);
+    const std::size_t visible = std::min(approach_visible_count(list_top, list_bottom),
+                                         approaches.size());
+    const std::size_t maximum_start = approaches.size() > visible ? approaches.size() - visible : 0;
+    const std::size_t start = std::min<std::size_t>(std::max(0, scroll), maximum_start);
+    int row_top = list_top;
+    if (transition_picker_open && selected) {
+        draw_text(left + 20, row_top - 22, "SELECT TRANSITION", accent);
+        row_top -= 34;
+        draw_button(left + 14, row_top, list_right, row_top - 34,
+                    "VECTORS / COMMON", selected_transition == 0);
+        row_top -= 40;
+        const std::size_t transition_visible = static_cast<std::size_t>(
+            std::max(1, (row_top - list_bottom) / 40));
+        const std::size_t transition_start = std::min<std::size_t>(
+            std::max(0, scroll), selected->transitions.size() > transition_visible
+                ? selected->transitions.size() - transition_visible : 0);
+        for (std::size_t offset = 0; offset < transition_visible &&
+             transition_start + offset < selected->transitions.size(); ++offset) {
+            const std::size_t index = transition_start + offset;
+            draw_button(left + 14, row_top, list_right, row_top - 34,
+                        selected->transitions[index].identifier,
+                        selected_transition == static_cast<int>(index + 1));
+            row_top -= 40;
+        }
+    } else {
+        for (std::size_t offset = 0; offset < visible; ++offset) {
+            const auto& approach = approaches[start + offset];
+            const bool is_selected = approach.identifier == selected_identifier;
+            draw_rectangle(left + 14, row_top, list_right, row_top - 36,
+                           is_selected ? active_navigation : card);
+            if (is_selected) draw_rectangle(left + 14, row_top, left + 18, row_top - 36, connected);
+            draw_text(left + 25, row_top - 23, shortened(approach.display_name, compact ? 34 : 26),
+                      is_selected ? text_primary : text_muted);
+            row_top -= 42;
+        }
+    }
+    if (approaches.empty() && airport.state == AirportLookupState::ready)
+        draw_text(left + 24, list_top - 27, "No approaches are installed for this airport.", text_muted);
+
+    {
+        const int detail_left = list_right + 14;
+        draw_rectangle(detail_left, list_top, panel_right - 14, list_bottom, card);
+        if (selected) {
+            draw_text(detail_left + 14, list_top - 26, selected->display_name,
+                      accent, xplmFont_Proportional);
+            draw_text(detail_left + 14, list_top - 53,
+                      "Procedure " + selected->identifier + "  |  Runway " +
+                          (selected->runway.empty() ? "CIRCLING" : selected->runway), text_primary);
+            const std::string transition = selected_transition > 0 &&
+                    selected_transition <= static_cast<int>(selected->transitions.size())
+                ? selected->transitions[static_cast<std::size_t>(selected_transition - 1)].identifier
+                : "VECTORS / COMMON";
+            draw_text(detail_left + 14, list_top - 80, "Transition  " + transition, connected);
+            const auto fixes = approach_fix_names(*selected, selected_transition);
+            int line_y = list_top - 109;
+            draw_text(detail_left + 14, line_y, "Click a fix to include / remove", text_muted);
+            line_y -= 25;
+            const std::size_t fix_visible = static_cast<std::size_t>(std::max(
+                1, (line_y - (list_bottom + 38)) / 30 + 1));
+            const std::size_t fix_start = std::min<std::size_t>(
+                std::max(0, fix_scroll), fixes.size() > fix_visible
+                    ? fixes.size() - fix_visible : 0);
+            for (std::size_t offset = 0; offset < fix_visible &&
+                 fix_start + offset < fixes.size(); ++offset) {
+                const auto& fix = fixes[fix_start + offset];
+                if (line_y - 24 < list_bottom + 38) break;
+                const bool removed = std::find(excluded_fixes.begin(), excluded_fixes.end(), fix.key) !=
+                                     excluded_fixes.end();
+                draw_rectangle(detail_left + 12, line_y + 8, panel_right - 26, line_y - 18,
+                               removed ? Color{0.28F, 0.10F, 0.10F, 1.0F} : active_navigation);
+                draw_text(detail_left + 22, line_y - 9,
+                          shortened((removed ? "REMOVED  " : "INCLUDE  ") + fix.label,
+                                    compact ? 29 : 42),
+                          removed ? Color{1.0F, 0.52F, 0.42F, 1.0F} : text_primary);
+                line_y -= 30;
+            }
+            if (fixes.size() > fix_visible)
+                draw_text(detail_left + 14, list_bottom + 42,
+                          "Wheel for all " + std::to_string(fixes.size()) + " procedure legs",
+                          accent);
+            draw_text(detail_left + 14, list_bottom + 20,
+                      "Preview first. Apply writes only after confirmation.", text_muted);
+        } else {
+            draw_text(detail_left + 14, list_top - 30,
+                      compact ? "Select an approach." :
+                                "Select an approach to preview its route and plate.", text_muted);
+        }
+    }
+
+    const int available_width = panel_right - left - 38;
+    const int button_width = std::max(72, (available_width - 12) / 3);
+    draw_button(left + 14, actions_top, left + 14 + button_width, actions_bottom, "Close");
+    draw_button(left + 20 + button_width, actions_top,
+                left + 20 + button_width * 2, actions_bottom, "Plate", selected != nullptr);
+    draw_button(left + 26 + button_width * 2, actions_top,
+                panel_right - 14, actions_bottom, "Apply", selected != nullptr);
+    if (!message.empty())
+        draw_text(left + 16, panel_bottom + 8, shortened(message, 78), connected);
 }
 
 std::vector<std::string> wrap_text(std::string_view value, std::size_t maximum_characters) {
@@ -703,7 +902,7 @@ void draw_progress_page(const RouteProgressSnapshot& progress, int left, int top
 
 std::string format_weight(double kilograms) {
     char value[64]{};
-    std::snprintf(value, sizeof(value), "%.0f kg  /  %.0f lb", kilograms, kilograms * 2.2046226218);
+    std::snprintf(value, sizeof(value), "%.0f lb", kilograms * 2.2046226218);
     return value;
 }
 
@@ -722,8 +921,9 @@ void draw_planning_page(const PlanningSnapshot& planning, int left, int top, int
     const int right_left = middle + gap / 2;
     const Color load_color = planning.overweight ? Color{1.0F, 0.38F, 0.30F, 1.0F} : connected;
     char gross[112]{};
-    std::snprintf(gross, sizeof(gross), "%.0f / %.0f kg  |  %.0f%%  |  %s",
-                  planning.loading.gross_weight_kg, planning.loading.maximum_gross_weight_kg,
+    std::snprintf(gross, sizeof(gross), "%.0f / %.0f lb  |  %.0f%%  |  %s",
+                  planning.loading.gross_weight_kg * 2.2046226218,
+                  planning.loading.maximum_gross_weight_kg * 2.2046226218,
                   planning.loading_percent, planning.overweight ? "OVER" : "OK");
     draw_rectangle(left, top - 62, left_right, top - 148, card);
     draw_text(left + 18, top - 91, "GROSS / MAXIMUM", load_color);
@@ -759,14 +959,16 @@ void draw_planning_page(const PlanningSnapshot& planning, int left, int top, int
     } else {
         char plan[180]{};
         std::snprintf(plan, sizeof(plan),
-                      "Burn %.1f GPH  |  Trip %.1f kg  |  Reserve %.1f kg",
+                      "Burn %.1f GPH  |  Trip %.0f lb  |  Reserve %.0f lb",
                       planning.fuel_flow_us_gallons_per_hour,
-                      planning.trip_fuel_kg, planning.reserve_fuel_kg);
+                      planning.trip_fuel_kg * 2.2046226218,
+                      planning.reserve_fuel_kg * 2.2046226218);
         draw_text(left, top - 356, plan,
                   planning.fuel_margin_kg >= 0.0 ? text_primary : Color{1.0F, 0.38F, 0.30F, 1.0F});
         char landing[150]{};
-        std::snprintf(landing, sizeof(landing), "Landing %.0f kg  |  Fuel margin %.1f kg  |  %s",
-                      planning.predicted_landing_weight_kg, planning.fuel_margin_kg,
+        std::snprintf(landing, sizeof(landing), "Landing %.0f lb  |  Fuel margin %.0f lb  |  %s",
+                      planning.predicted_landing_weight_kg * 2.2046226218,
+                      planning.fuel_margin_kg * 2.2046226218,
                       planning.dispatch_ready ? "PLAN CHECKS PASS" : "REVIEW WEIGHT OR FUEL");
         draw_text(left, top - 384, landing, planning.dispatch_ready ? connected : load_color);
     }
@@ -794,27 +996,34 @@ void draw_aircraft_symbol(int center_x, int center_y, double heading_degrees) {
     const double right_x = std::cos(heading);
     const double right_y = -std::sin(heading);
     constexpr std::array<std::pair<double, double>, 16> silhouette{{
-        {14.0, 0.0}, {3.0, 2.0}, {0.0, 10.0}, {-3.0, 10.0}, {-1.5, 2.0},
-        {-8.0, 2.0}, {-10.0, 5.0}, {-12.0, 5.0}, {-10.0, 0.0}, {-12.0, -5.0},
-        {-10.0, -5.0}, {-8.0, -2.0}, {-1.5, -2.0}, {-3.0, -10.0},
-        {0.0, -10.0}, {3.0, -2.0}
+        {14.0, 0.0}, {5.0, 1.7}, {1.2, 8.2}, {-1.2, 8.2}, {-0.2, 2.1},
+        {-7.0, 2.1}, {-9.0, 4.0}, {-10.2, 4.0}, {-8.4, 0.0}, {-10.2, -4.0},
+        {-9.0, -4.0}, {-7.0, -2.1}, {-0.2, -2.1}, {-1.2, -8.2},
+        {1.2, -8.2}, {5.0, -1.7}
     }};
-    const auto vertex = [&](double forward, double right, double offset) {
-        glVertex2d(center_x + forward_x * forward + right_x * right + offset,
-                   center_y + forward_y * forward + right_y * right - offset);
+    const auto vertex = [&](double forward, double right) {
+        glVertex2d(center_x + forward_x * forward + right_x * right,
+                   center_y + forward_y * forward + right_y * right);
     };
-    glColor4f(0.0F, 0.0F, 0.0F, 0.85F);
+    glColor4f(0.015F, 0.36F, 0.95F, 1.0F);
     glBegin(GL_POLYGON);
-    for (const auto& [forward, right] : silhouette) vertex(forward, right, 1.5);
+    for (const auto& [forward, right] : silhouette) vertex(forward, right);
     glEnd();
-    glColor4f(0.96F, 0.99F, 1.0F, 1.0F);
-    glBegin(GL_POLYGON);
-    for (const auto& [forward, right] : silhouette) vertex(forward, right, 0.0);
-    glEnd();
-    glColor4f(accent.red, accent.green, accent.blue, 1.0F);
-    glLineWidth(1.8F);
+    glColor4f(0.0F, 0.035F, 0.09F, 1.0F);
+    glLineWidth(3.6F);
     glBegin(GL_LINE_LOOP);
-    for (const auto& [forward, right] : silhouette) vertex(forward, right, 0.0);
+    for (const auto& [forward, right] : silhouette) vertex(forward, right);
+    glEnd();
+    glColor4f(0.88F, 0.96F, 1.0F, 1.0F);
+    glLineWidth(1.2F);
+    glBegin(GL_LINE_LOOP);
+    for (const auto& [forward, right] : silhouette) vertex(forward, right);
+    glEnd();
+    glColor4f(0.35F, 0.86F, 1.0F, 1.0F);
+    glLineWidth(1.0F);
+    glBegin(GL_LINES);
+    vertex(11.0, 0.0);
+    vertex(-6.5, 0.0);
     glEnd();
     glLineWidth(1.0F);
 }
@@ -1882,6 +2091,12 @@ std::size_t library_visible_start(const BriefingModel& briefing,
     return std::min(indices.size() - visible, position - visible + 1);
 }
 
+std::size_t library_visible_count(int row_start, int bottom, std::size_t count) {
+    const int available_height = std::max(34, row_start - (bottom + 52));
+    return std::min(count, static_cast<std::size_t>(
+        std::max(1, available_height / 38)));
+}
+
 void select_library_airport(BriefingModel& briefing, std::string airport) {
     briefing.select_library_airport(std::move(airport));
     const auto indices = filtered_library_indices(briefing);
@@ -1941,19 +2156,33 @@ void draw_briefing_library(const BriefingModel& briefing, const FlightPlanSnapsh
     const int row_start = top - (compact ? 197 : 158);
     constexpr int row_height = 34;
     const auto indices = filtered_library_indices(briefing);
-    const std::size_t visible = std::min<std::size_t>(indices.size(), 8);
+    const std::size_t visible = library_visible_count(row_start, bottom, indices.size());
     const std::size_t start = library_visible_start(briefing, indices, visible);
     for (std::size_t offset = 0; offset < visible; ++offset) {
         const std::size_t index = indices[start + offset];
         const int row_top = row_start - static_cast<int>(offset) * (row_height + 4);
         const bool selected = static_cast<int>(index) == briefing.selected_entry_index();
-        draw_rectangle(left, row_top, list_right, row_top - row_height,
+        draw_rectangle(left, row_top, list_right - 8, row_top - row_height,
                        selected ? active_navigation : card);
         const auto& entry = briefing.library()[index];
         draw_text(left + 8, row_top - 22,
                   std::string(entry.category == LibraryCategory::chart ? "CHART  " : "BRIEF  ") +
                       shortened(entry.name, 23),
                   selected ? text_primary : text_muted);
+    }
+    if (indices.size() > visible && visible > 0) {
+        const int track_top = row_start;
+        const int track_bottom = row_start - static_cast<int>(visible) * 38 + 4;
+        const int track_height = std::max(12, track_top - track_bottom);
+        const int thumb_height = std::max(
+            22, track_height * static_cast<int>(visible) / static_cast<int>(indices.size()));
+        const int maximum_start = static_cast<int>(indices.size() - visible);
+        const int travel = std::max(0, track_height - thumb_height);
+        const int thumb_top = track_top - (maximum_start > 0
+            ? travel * static_cast<int>(start) / maximum_start : 0);
+        draw_rectangle(list_right - 5, track_top, list_right, track_bottom, status_bar);
+        draw_rectangle(list_right - 6, thumb_top, list_right + 1,
+                       thumb_top - thumb_height, accent);
     }
     if (indices.empty()) {
         draw_text(left, row_start - 22,
@@ -1984,12 +2213,22 @@ void draw_briefing_library(const BriefingModel& briefing, const FlightPlanSnapsh
 
 void draw_briefing_checklist(const BriefingModel& briefing, int left, int top, int right) {
     const int card_right = responsive_card_right(left, right, 420);
+    const int phase_width = std::max(88, (card_right - left - 12) / 3);
+    draw_button(left, top - 96, left + phase_width, top - 130, "Preflight",
+                briefing.checklist_phase() == ChecklistPhase::preflight);
+    draw_button(left + phase_width + 6, top - 96, left + phase_width * 2 + 6,
+                top - 130, "Takeoff/Cruise",
+                briefing.checklist_phase() == ChecklistPhase::takeoff_cruise);
+    draw_button(left + phase_width * 2 + 12, top - 96, card_right, top - 130,
+                "Descent/Landing",
+                briefing.checklist_phase() == ChecklistPhase::descent_landing);
     char progress[64]{};
     std::snprintf(progress, sizeof(progress), "%zu of %zu complete",
                   briefing.completed_checklist_items(), briefing.checklist().size());
-    draw_text(left, top - 112, progress, text_muted);
-    draw_button(card_right - 78, top - 98, card_right, top - 131, "Reset");
-    int row_top = top - 148;
+    draw_text(left, top - 153, shortened(std::string(briefing.checklist_aircraft()) +
+              "  |  offline general checklist  |  " + progress, 82), text_muted);
+    draw_button(card_right - 78, top - 139, card_right, top - 172, "Reset");
+    int row_top = top - 188;
     for (const auto& item : briefing.checklist()) {
         draw_rectangle(left, row_top, card_right, row_top - 40, card);
         draw_border(left + 12, row_top - 10, left + 32, row_top - 30,
@@ -2050,7 +2289,8 @@ std::string log_time(int seconds) {
     return value;
 }
 
-void draw_logbook_page(const FlightLogSnapshot& log, int left, int top, int right) {
+void draw_logbook_page(const FlightLogSnapshot& log, int selected_entry,
+                       int left, int top, int right) {
     const int card_right = responsive_card_right(left, right, 420);
     draw_text(left, top, "Flight Logbook", text_primary, xplmFont_Proportional);
     draw_text(left, top - 28, "Persistent takeoff, landing, route-track, altitude, and landing-rate records", text_muted);
@@ -2081,6 +2321,43 @@ void draw_logbook_page(const FlightLogSnapshot& log, int left, int top, int righ
         draw_text(left + 14, row_top - 27, shortened(row, 96), text_primary);
         row_top -= 46;
     }
+    if (selected_entry >= 0 && selected_entry < static_cast<int>(log.entries.size())) {
+        const auto& entry = log.entries[static_cast<std::size_t>(selected_entry)];
+        const int detail_left = left + 24;
+        const int detail_right = card_right - 24;
+        const int detail_top = top - 178;
+        const int detail_bottom = detail_top - 300;
+        draw_rectangle(detail_left - 5, detail_top + 5, detail_right + 5,
+                       detail_bottom - 5, status_bar);
+        draw_rectangle(detail_left, detail_top, detail_right, detail_bottom,
+                       Color{0.065F, 0.085F, 0.105F, 1.0F});
+        draw_border(detail_left, detail_top, detail_right, detail_bottom, accent, 2.0F);
+        draw_text(detail_left + 18, detail_top - 28, "FLIGHT DETAILS", accent,
+                  xplmFont_Proportional);
+        draw_text(detail_left + 18, detail_top - 57,
+                  shortened(entry.aircraft_name, 56), text_primary);
+        draw_text(detail_left + 18, detail_top - 84,
+                  entry.departure + "  >  " + entry.destination + "  |  " + entry.completed_utc,
+                  text_primary);
+        draw_text(detail_left + 18, detail_top - 121,
+                  "AIRBORNE  " + log_time(entry.airborne_seconds) +
+                  "    DISTANCE  " + std::to_string(static_cast<int>(std::lround(entry.distance_nm))) + " NM",
+                  text_muted);
+        draw_text(detail_left + 18, detail_top - 150,
+                  "MAX ALT  " + std::to_string(static_cast<int>(std::lround(entry.maximum_altitude_feet))) +
+                  " FT    MAX GS  " + std::to_string(static_cast<int>(std::lround(entry.maximum_ground_speed_knots))) + " KT",
+                  text_primary);
+        draw_text(detail_left + 18, detail_top - 179,
+                  "MAX CLIMB  " + std::to_string(static_cast<int>(std::lround(entry.maximum_climb_rate_fpm))) +
+                  " FPM    MAX DESCENT  " + std::to_string(static_cast<int>(std::lround(entry.maximum_descent_rate_fpm))) + " FPM",
+                  text_primary);
+        draw_text(detail_left + 18, detail_top - 208,
+                  "LANDING RATE  " + std::to_string(static_cast<int>(std::lround(entry.landing_vertical_speed_fpm))) +
+                  " FPM    TRACK POINTS  " + std::to_string(entry.track.size()),
+                  connected);
+        draw_text(detail_left + 18, detail_bottom + 26,
+                  "Click this flight again to close details", text_muted);
+    }
 }
 
 void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
@@ -2109,6 +2386,8 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                        bool show_map_aircraft,
                        bool show_map_aircraft_info, bool show_map_route,
                        bool show_map_labels, int map_marker_scale,
+                       bool flight_plan_expanded,
+                       int selected_log_entry,
                        bool show_weather_forecast,
                        const DisplayPreferences& display_preferences,
                        int left, int top, int right, int bottom) {
@@ -2127,6 +2406,7 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         break;
     case EfbPage::flight_plan:
         draw_flight_plan_page(flight_plan, flight_plan_editor, route_file_message,
+                              flight_plan_expanded,
                               left, top, right, bottom);
         break;
     case EfbPage::airports:
@@ -2146,7 +2426,7 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                            left, top, right, bottom);
         break;
     case EfbPage::logbook:
-        draw_logbook_page(flight_log, left, top, right);
+        draw_logbook_page(flight_log, selected_log_entry, left, top, right);
         break;
     case EfbPage::settings:
         draw_text(left, top, "Settings", text_primary, xplmFont_Proportional);
@@ -2212,9 +2492,9 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         draw_text(left, top, "About OpenEFB", text_primary, xplmFont_Proportional);
         draw_text(left, top - 28, "An open-source electronic flight bag for X-Plane 12.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Version", "OPEN EFB / 1.0 RC28");
+                  "Version", "OPEN EFB / 1.0.0");
         draw_card(left, top - 178, card_right, top - 274,
-                  "Release", "Exterior 3D traffic, FAA chart recovery, and expanded settings");
+                  "Release", "Stable desktop release for X-Plane 12");
         draw_card(left, top - 294, card_right, top - 390,
                   "Project", "Built in the open for the flight-sim community");
         break;
@@ -2389,11 +2669,12 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
         draw_button(right - 146, top - 10, right - 116, top - 44, "-");
         draw_button(right - 112, top - 10, right - 82, top - 44, "+");
         draw_button(right - 78, top - 10, right - 8, top - 44,
-                    navigation_open_ ? "CLOSE" : "PAGES", true);
+                    navigation_open_ ? "CLOSE" : "MENU", true);
     } else {
         draw_text(left + sidebar_width + 24, top - 35, ui_model_.active_page_title(), text_primary);
     }
     const auto& telemetry = telemetry_model_.snapshot();
+    briefing_model_.configure_checklist_for_aircraft(telemetry.aircraft_name);
     if (telemetry.available) {
         moving_map_model_.update_aircraft_position(telemetry.latitude_degrees,
                                                    telemetry.longitude_degrees);
@@ -2440,7 +2721,14 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
         page_scroll_page_ = ui_model_.active_page();
         page_scroll_pixels_ = 0;
     }
-    const int scroll_limit = page_scroll_limit(ui_model_.active_page(), content_top, bottom);
+    int scroll_limit = page_scroll_limit(ui_model_.active_page(), content_top, bottom);
+    if (ui_model_.active_page() == EfbPage::flight_plan) {
+        const int viewport_height = std::max(120, content_top - bottom - 28);
+        const int route_height = 126 +
+            static_cast<int>(complete_flight_plan_legs(
+                flight_plan_model_.snapshot()).size()) * 54;
+        scroll_limit = std::max(scroll_limit, route_height - viewport_height);
+    }
     page_scroll_pixels_ = std::clamp(page_scroll_pixels_, 0, scroll_limit);
     const int scrolled_content_top = content_top + page_scroll_pixels_;
     draw_rectangle(content_left - 18, content_top + 22, right - 10, bottom + 10, sidebar);
@@ -2468,6 +2756,8 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
                       map_filters_open_, map_filter_scroll_,
                       show_map_aircraft_, show_map_aircraft_info_,
                       show_map_route_, show_map_labels_, map_marker_scale_,
+                      flight_plan_expanded_,
+                      selected_log_entry_,
                       show_weather_forecast_,
                       display_preferences_,
                       content_left, scrolled_content_top, right, bottom);
@@ -2592,6 +2882,14 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
                                "ROUTE END", hover_accent);
         }
     }
+    if (approach_panel_open_ && ui_model_.active_page() == EfbPage::flight_plan) {
+        draw_approach_panel(airport_info_model_.snapshot(), flight_plan_model_.snapshot(),
+                            approach_destination_endpoint_, selected_approach_identifier_,
+                            selected_approach_transition_, approach_transition_picker_open_,
+                            excluded_approach_fixes_, approach_scroll_, approach_fix_scroll_,
+                            approach_message_,
+                            content_left, content_top, right, bottom);
+    }
     if (pdf_viewer_.visible()) {
         const int viewer_left = viewer_left_for(left, right);
         const int viewer_right = right - 18;
@@ -2608,7 +2906,22 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
         const int document_bottom = viewer_bottom + 54;
         draw_rectangle(document_left, document_top, document_right, document_bottom,
                        Color{1.0F, 1.0F, 1.0F, 1.0F});
-        pdf_viewer_.draw(document_left, document_top, document_right, document_bottom);
+        PdfAircraftOverlay chart_aircraft;
+        chart_aircraft.available = telemetry.available;
+        chart_aircraft.latitude_degrees = telemetry.latitude_degrees;
+        chart_aircraft.longitude_degrees = telemetry.longitude_degrees;
+        chart_aircraft.heading_degrees = telemetry.true_heading_degrees != 0.0
+            ? telemetry.true_heading_degrees : telemetry.heading_degrees;
+        chart_aircraft.altitude_feet = telemetry.altitude_feet;
+        const auto& approach = flight_plan_model_.snapshot();
+        if (approach.active_approach_leg_index >= 0 &&
+            approach.active_approach_leg_index <
+                static_cast<int>(approach.approach_legs.size())) {
+            chart_aircraft.approach_altitude_feet = approach.approach_legs[
+                static_cast<std::size_t>(approach.active_approach_leg_index)].altitude_feet;
+        }
+        pdf_viewer_.draw(document_left, document_top, document_right, document_bottom,
+                         chart_aircraft);
         const std::string pdf_status = pdf_viewer_.status();
         if (pdf_status != "PDF page ready") {
             draw_text(document_left + 18, document_top - 28, pdf_status,
@@ -2695,7 +3008,7 @@ void XPlaneWindow::apply_editor_route() {
     }
     if (!flight_plan_editor_.source_unchanged(flight_plan_model_.snapshot())) {
         flight_plan_editor_.set_message(
-            "X-Plane's route changed while editing - Cancel and reopen the builder");
+            "X-Plane's route changed while editing - return to Flight Plan and reopen Builder");
         return;
     }
     const auto result = xplane_flight_plan_.apply_route(flight_plan_editor_.legs());
@@ -2821,6 +3134,114 @@ void XPlaneWindow::search_airport() {
     if (!airport_query_.empty()) {
         xplane_airport_data_.search(airport_query_);
     }
+}
+
+void XPlaneWindow::open_approach_panel(bool destination_endpoint) {
+    approach_panel_open_ = true;
+    select_approach_endpoint(destination_endpoint);
+}
+
+void XPlaneWindow::select_approach_endpoint(bool destination_endpoint) {
+    approach_destination_endpoint_ = destination_endpoint;
+    selected_approach_identifier_.clear();
+    selected_approach_transition_ = 0;
+    approach_transition_picker_open_ = false;
+    excluded_approach_fixes_.clear();
+    approach_scroll_ = 0;
+    approach_fix_scroll_ = 0;
+    const auto [departure, destination] = briefing_airports(flight_plan_model_.snapshot());
+    const std::string airport = destination_endpoint ? destination : departure;
+    if (airport.empty()) {
+        approach_message_ = destination_endpoint
+            ? "Set a destination airport in the active route first"
+            : "Set a departure airport in the active route first";
+        return;
+    }
+    approach_message_ = "Loading " + airport + " approaches from installed X-Plane data";
+    if (!xplane_airport_data_.search(airport))
+        approach_message_ = "Airport procedure service is not available";
+}
+
+void XPlaneWindow::apply_selected_approach() {
+    const auto airport = airport_info_model_.snapshot();
+    const auto* approach = selected_approach(airport, selected_approach_identifier_);
+    if (!approach) {
+        approach_message_ = "Select an approach before applying";
+        return;
+    }
+    std::string transition;
+    if (selected_approach_transition_ > 0 &&
+        selected_approach_transition_ <= static_cast<int>(approach->transitions.size())) {
+        transition = approach->transitions[
+            static_cast<std::size_t>(selected_approach_transition_ - 1)].identifier;
+    }
+    const auto result = xplane_flight_plan_.apply_approach(
+        *approach, std::move(transition), airport.identifier,
+        approach_destination_endpoint_, excluded_approach_fixes_);
+    approach_message_ = result.message;
+    if (result.success && flight_plan_editor_.active()) {
+        flight_plan_editor_.mark_applied(flight_plan_model_.snapshot());
+        flight_plan_editor_.set_message(result.message + " - edit any leg, then Apply again");
+        approach_panel_open_ = false;
+        XPLMTakeKeyboardFocus(window_id_);
+    }
+}
+
+void XPlaneWindow::open_selected_approach_plate() {
+    const auto airport = airport_info_model_.snapshot();
+    const auto* approach = selected_approach(airport, selected_approach_identifier_);
+    if (!approach) {
+        approach_message_ = "Select an approach before opening its plate";
+        return;
+    }
+    auto normalized = [](std::string_view value) {
+        std::string result;
+        for (const unsigned char character : value) {
+            if (std::isalnum(character))
+                result.push_back(static_cast<char>(std::toupper(character)));
+        }
+        return result;
+    };
+    const std::string runway = normalized(approach->runway);
+    std::string type;
+    if (!approach->identifier.empty()) {
+        switch (approach->identifier.front()) {
+        case 'I': type = "ILS"; break;
+        case 'L': type = "LOC"; break;
+        case 'B': type = "LOCBC"; break;
+        case 'R': case 'P': type = "RNAV"; break;
+        case 'N': type = "NDB"; break;
+        case 'D': type = "VORDME"; break;
+        case 'S': case 'V': type = "VOR"; break;
+        default: break;
+        }
+    }
+    int best_index = -1;
+    int best_score = 0;
+    for (std::size_t index = 0; index < briefing_model_.library().size(); ++index) {
+        const auto& entry = briefing_model_.library()[index];
+        if (entry.category != LibraryCategory::chart ||
+            !library_entry_matches(entry, airport.identifier)) continue;
+        const std::string name = normalized(entry.name);
+        int score = 1;
+        if (!runway.empty() && name.find(runway) != std::string::npos) score += 8;
+        if (!type.empty() && name.find(type) != std::string::npos) score += 6;
+        if (name.find(normalized(approach->identifier)) != std::string::npos) score += 4;
+        if (score > best_score) {
+            best_score = score;
+            best_index = static_cast<int>(index);
+        }
+    }
+    const int required_score = runway.empty() ? 6 : 9;
+    if (best_index < 0 || best_score < required_score) {
+        briefing_library_.refresh();
+        approach_message_ = "Matching plate is not downloaded yet; chart refresh started";
+        return;
+    }
+    briefing_model_.select_library_airport(airport.identifier);
+    briefing_model_.select_entry(best_index);
+    open_briefing_entry();
+    approach_message_ = "Opened " + approach->display_name + " plate";
 }
 
 void XPlaneWindow::handle_airport_key(char key, char virtual_key) {
@@ -3020,6 +3441,149 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
         }
         return 1;
     }
+    if (window->approach_panel_open_ &&
+        window->ui_model_.active_page() == EfbPage::flight_plan) {
+        const int content_left = content_left_for(left, right);
+        const int content_top = top - status_bar_height - 38;
+        const int panel_right = responsive_card_right(content_left, right, 420);
+        const int panel_bottom = bottom + 22;
+        const int endpoint_width = std::max(100, (panel_right - content_left - 38) / 2);
+        if (y <= content_top - 42 && y >= content_top - 76) {
+            if (x >= content_left + 14 && x <= content_left + 14 + endpoint_width) {
+                window->select_approach_endpoint(false);
+                return 1;
+            }
+            if (x >= content_left + 24 + endpoint_width && x <= panel_right - 14) {
+                window->select_approach_endpoint(true);
+                return 1;
+            }
+        }
+        const int actions_top = panel_bottom + 52;
+        const int actions_bottom = panel_bottom + 18;
+        const int available_width = panel_right - content_left - 38;
+        const int button_width = std::max(72, (available_width - 12) / 3);
+        if (y <= actions_top && y >= actions_bottom) {
+            if (x >= content_left + 14 && x <= content_left + 14 + button_width) {
+                window->approach_panel_open_ = false;
+                if (window->flight_plan_editor_.active()) XPLMTakeKeyboardFocus(window_id);
+                return 1;
+            }
+            if (x >= content_left + 20 + button_width &&
+                x <= content_left + 20 + button_width * 2) {
+                window->open_selected_approach_plate();
+                return 1;
+            }
+            if (x >= content_left + 26 + button_width * 2 && x <= panel_right - 14) {
+                window->apply_selected_approach();
+                return 1;
+            }
+        }
+        const auto airport = window->airport_info_model_.snapshot();
+        const int list_top = content_top - 113;
+        const int list_bottom = actions_top + 12;
+        const bool compact_panel = panel_right - content_left < 520;
+        const int list_right = compact_panel ? panel_right - 14
+            : content_left + (panel_right - content_left) * 47 / 100;
+        const auto* selected = selected_approach(airport, window->selected_approach_identifier_);
+        if (window->approach_transition_picker_open_ && selected) {
+            int transition_top = list_top - 34;
+            if (x >= content_left + 14 && x <= list_right &&
+                y <= transition_top && y >= transition_top - 34) {
+                window->selected_approach_transition_ = 0;
+                window->approach_transition_picker_open_ = false;
+                window->approach_scroll_ = 0;
+                window->approach_fix_scroll_ = 0;
+                window->excluded_approach_fixes_.clear();
+                window->approach_message_ = "Vectors/common approach legs selected";
+                return 1;
+            }
+            transition_top -= 40;
+            const std::size_t transition_visible = static_cast<std::size_t>(
+                std::max(1, (transition_top - list_bottom) / 40));
+            const std::size_t transition_start = std::min<std::size_t>(
+                std::max(0, window->approach_scroll_),
+                selected->transitions.size() > transition_visible
+                    ? selected->transitions.size() - transition_visible : 0);
+            for (std::size_t offset = 0; offset < transition_visible &&
+                 transition_start + offset < selected->transitions.size(); ++offset) {
+                const std::size_t index = transition_start + offset;
+                if (x >= content_left + 14 && x <= list_right &&
+                    y <= transition_top && y >= transition_top - 34) {
+                    window->selected_approach_transition_ = static_cast<int>(index + 1);
+                    window->approach_transition_picker_open_ = false;
+                    window->approach_scroll_ = 0;
+                    window->approach_fix_scroll_ = 0;
+                    window->excluded_approach_fixes_.clear();
+                    window->approach_message_ = "Transition selected: " +
+                        selected->transitions[index].identifier;
+                    return 1;
+                }
+                transition_top -= 40;
+            }
+            return 1;
+        }
+        const std::size_t visible = std::min(
+            approach_visible_count(list_top, list_bottom),
+            airport.procedures.approach_details.size());
+        const std::size_t maximum_start = airport.procedures.approach_details.size() > visible
+            ? airport.procedures.approach_details.size() - visible : 0;
+        const std::size_t start = std::min<std::size_t>(
+            std::max(0, window->approach_scroll_), maximum_start);
+        int row_top = list_top;
+        for (std::size_t offset = 0; offset < visible; ++offset) {
+            if (x >= content_left + 14 && x <= list_right &&
+                y <= row_top && y >= row_top - 36) {
+                window->selected_approach_identifier_ =
+                    airport.procedures.approach_details[start + offset].identifier;
+                const auto now = std::chrono::steady_clock::now();
+                const bool double_click = window->last_clicked_approach_identifier_ ==
+                        window->selected_approach_identifier_ &&
+                    now - window->last_approach_click_ <= std::chrono::milliseconds(450);
+                window->last_clicked_approach_identifier_ = window->selected_approach_identifier_;
+                window->last_approach_click_ = now;
+                window->selected_approach_transition_ = 0;
+                window->excluded_approach_fixes_.clear();
+                window->approach_fix_scroll_ = 0;
+                window->approach_transition_picker_open_ = double_click;
+                if (double_click) window->approach_scroll_ = 0;
+                window->approach_message_ = double_click
+                    ? "Select an available transition"
+                    : "Double-click this approach to choose its transition";
+                return 1;
+            }
+            row_top -= 42;
+        }
+        if (!compact_panel && selected) {
+            const int detail_left = list_right + 14;
+            const auto fixes = approach_fix_names(*selected, window->selected_approach_transition_);
+            int fix_y = list_top - 134;
+            const std::size_t fix_visible = static_cast<std::size_t>(std::max(
+                1, (fix_y - (list_bottom + 38)) / 30 + 1));
+            const std::size_t fix_start = std::min<std::size_t>(
+                std::max(0, window->approach_fix_scroll_),
+                fixes.size() > fix_visible ? fixes.size() - fix_visible : 0);
+            for (std::size_t offset = 0; offset < fix_visible &&
+                 fix_start + offset < fixes.size(); ++offset) {
+                const auto& fix = fixes[fix_start + offset];
+                if (fix_y - 18 < list_bottom + 38) break;
+                if (x >= detail_left + 12 && x <= panel_right - 26 &&
+                    y <= fix_y + 8 && y >= fix_y - 18) {
+                    auto& excluded = window->excluded_approach_fixes_;
+                    const auto found = std::find(excluded.begin(), excluded.end(), fix.key);
+                    if (found == excluded.end()) {
+                        excluded.push_back(fix.key);
+                        window->approach_message_ = "Removed " + fix.label + " from the pending procedure";
+                    } else {
+                        excluded.erase(found);
+                        window->approach_message_ = "Restored " + fix.label + " to the pending procedure";
+                    }
+                    return 1;
+                }
+                fix_y -= 30;
+            }
+        }
+        return 1;
+    }
     if (window->pending_map_navigation_) {
         const int content_left = content_left_for(left, right);
         const int content_top = top - status_bar_height - 38;
@@ -3066,6 +3630,21 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
             }
         }
         return 1;
+    }
+    if (window->ui_model_.active_page() == EfbPage::logbook) {
+        const int content_left = content_left_for(left, right);
+        const int content_top = top - status_bar_height - 38 + window->page_scroll_pixels_;
+        const int card_right = responsive_card_right(content_left, right, 420);
+        int row_top = content_top - 214;
+        const auto& entries = window->flight_log_model_.snapshot().entries;
+        for (std::size_t index = 0; index < entries.size() && index < 6; ++index) {
+            if (x >= content_left && x <= card_right && y <= row_top && y >= row_top - 42) {
+                const int selected = static_cast<int>(index);
+                window->selected_log_entry_ = window->selected_log_entry_ == selected ? -1 : selected;
+                return 1;
+            }
+            row_top -= 46;
+        }
     }
     if (window->ui_model_.active_page() == EfbPage::briefing) {
         const int content_left = content_left_for(left, right);
@@ -3145,7 +3724,8 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
             constexpr int row_height = 34;
             const int row_start = content_top - (compact_library ? 197 : 158);
             const auto indices = filtered_library_indices(window->briefing_model_);
-            const std::size_t visible = std::min<std::size_t>(indices.size(), 8);
+            const std::size_t visible = library_visible_count(
+                row_start, bottom, indices.size());
             const std::size_t start = library_visible_start(window->briefing_model_, indices, visible);
             for (std::size_t offset = 0; offset < visible; ++offset) {
                 const int row_top = row_start - static_cast<int>(offset) * (row_height + 4);
@@ -3155,12 +3735,23 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
                 }
             }
         } else if (window->briefing_model_.active_tab() == BriefingTab::checklist) {
+            const int phase_width = std::max(88, (card_right - content_left - 12) / 3);
+            if (y <= content_top - 96 && y >= content_top - 130) {
+                if (x >= content_left && x <= content_left + phase_width)
+                    window->briefing_model_.select_checklist_phase(ChecklistPhase::preflight);
+                else if (x >= content_left + phase_width + 6 &&
+                         x <= content_left + phase_width * 2 + 6)
+                    window->briefing_model_.select_checklist_phase(ChecklistPhase::takeoff_cruise);
+                else if (x >= content_left + phase_width * 2 + 12 && x <= card_right)
+                    window->briefing_model_.select_checklist_phase(ChecklistPhase::descent_landing);
+                return 1;
+            }
             if (x >= card_right - 78 && x <= card_right &&
-                y <= content_top - 98 && y >= content_top - 131) {
+                y <= content_top - 139 && y >= content_top - 172) {
                 window->briefing_model_.reset_checklist();
                 return 1;
             }
-            int row_top = content_top - 148;
+            int row_top = content_top - 188;
             for (std::size_t index = 0; index < window->briefing_model_.checklist().size(); ++index) {
                 if (x >= content_left && x <= card_right && y <= row_top && y >= row_top - 40) {
                     window->briefing_model_.toggle_checklist_item(index);
@@ -3226,23 +3817,32 @@ int XPlaneWindow::handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseSt
         const int content_top = top - status_bar_height - 38 + window->page_scroll_pixels_;
         const int card_right = responsive_card_right(content_left, right, 420);
         if (!window->flight_plan_editor_.active()) {
+            const int toolbar_left = std::max(content_left + 112, card_right - 306);
+            const int toolbar_width = std::max(60, (card_right - toolbar_left - 12) / 3);
             if (y <= content_top + 8 && y >= content_top - 23) {
-                if (x >= card_right - 338 && x <= card_right - 224) {
+                if (x >= toolbar_left && x <= toolbar_left + toolbar_width) {
                     window->import_latest_route();
                     return 1;
                 }
-                if (x >= card_right - 216 && x <= card_right - 90) {
+                if (x >= toolbar_left + toolbar_width + 6 &&
+                    x <= toolbar_left + toolbar_width * 2 + 6) {
                     window->export_current_route();
                     return 1;
                 }
             }
-            if (x >= card_right - 82 && x <= card_right &&
+            if (x >= toolbar_left + toolbar_width * 2 + 12 && x <= card_right &&
                 y <= content_top + 8 && y >= content_top - 23 &&
                 window->flight_plan_editor_.begin(window->flight_plan_model_.snapshot())) {
                 XPLMTakeKeyboardFocus(window_id);
                 return 1;
             }
         } else {
+            if (x >= card_right - 108 && x <= card_right &&
+                y <= content_top + 8 && y >= content_top - 25) {
+                window->open_approach_panel(true);
+                XPLMTakeKeyboardFocus(nullptr);
+                return 1;
+            }
             XPLMTakeKeyboardFocus(window_id);
             if (y <= content_top - 87 && y >= content_top - 122) {
                 if (x >= card_right - 226 && x <= card_right - 156) {
@@ -3556,6 +4156,13 @@ void XPlaneWindow::handle_key(XPLMWindowID, char key, XPLMKeyFlags flags, char v
                               void* refcon, int losing_focus) {
     auto* window = static_cast<XPlaneWindow*>(refcon);
     if (!window || losing_focus || (flags & xplm_DownFlag) == 0) return;
+    if (window->approach_panel_open_) {
+        if (static_cast<unsigned char>(virtual_key) == XPLM_VK_ESCAPE) {
+            window->approach_panel_open_ = false;
+            if (window->flight_plan_editor_.active()) XPLMTakeKeyboardFocus(window->window_id_);
+        }
+        return;
+    }
     if (window->ui_model_.active_page() == EfbPage::flight_plan) {
         window->handle_editor_key(key, virtual_key);
     } else if (window->ui_model_.active_page() == EfbPage::airports) {
@@ -3638,6 +4245,34 @@ int XPlaneWindow::handle_wheel(XPLMWindowID window_id, int x, int y, int, int cl
         }
         return 1;
     }
+    if (window->approach_panel_open_ &&
+        window->ui_model_.active_page() == EfbPage::flight_plan) {
+        const auto airport = window->airport_info_model_.snapshot();
+        const int direction = clicks < 0 ? 1 : -1;
+        const auto* selected = selected_approach(airport, window->selected_approach_identifier_);
+        const int content_left = content_left_for(left, right);
+        const int content_top = top - status_bar_height - 38;
+        const int panel_right = responsive_card_right(content_left, right, 420);
+        const int list_right = content_left + (panel_right - content_left) * 45 / 100;
+        if (!window->approach_transition_picker_open_ && selected && x > list_right) {
+            const int panel_bottom = bottom + 22;
+            const int list_top = content_top - 113;
+            const int list_bottom = panel_bottom + 64;
+            const int fix_y = list_top - 134;
+            const int visible = std::max(1, (fix_y - (list_bottom + 38)) / 30 + 1);
+            const int maximum = std::max(0, static_cast<int>(
+                approach_fix_names(*selected, window->selected_approach_transition_).size()) - visible);
+            window->approach_fix_scroll_ = std::clamp(
+                window->approach_fix_scroll_ + direction * std::abs(clicks), 0, maximum);
+            return 1;
+        }
+        const int maximum = window->approach_transition_picker_open_ && selected
+            ? std::max(0, static_cast<int>(selected->transitions.size()) - 2)
+            : std::max(0, static_cast<int>(airport.procedures.approach_details.size()) - 2);
+        window->approach_scroll_ = std::clamp(
+            window->approach_scroll_ + direction * std::abs(clicks), 0, maximum);
+        return 1;
+    }
     if (window->ui_model_.active_page() == EfbPage::briefing &&
         window->briefing_model_.active_tab() == BriefingTab::library) {
         const int content_left = content_left_for(left, right);
@@ -3664,6 +4299,18 @@ int XPlaneWindow::handle_wheel(XPLMWindowID window_id, int x, int y, int, int cl
             }
             selected += direction;
         }
+        return 1;
+    }
+    if (window->ui_model_.active_page() == EfbPage::flight_plan &&
+        window->flight_plan_expanded_) {
+        const int content_top = top - status_bar_height - 38;
+        const int viewport_height = std::max(120, content_top - bottom - 28);
+        const int route_height = 126 +
+            static_cast<int>(window->flight_plan_model_.snapshot().legs.size()) * 54;
+        const int limit = std::max(0, route_height - viewport_height);
+        const int direction = clicks < 0 ? 1 : -1;
+        window->page_scroll_pixels_ = std::clamp(
+            window->page_scroll_pixels_ + direction * std::abs(clicks) * 38, 0, limit);
         return 1;
     }
     if (window->ui_model_.active_page() != EfbPage::home) {

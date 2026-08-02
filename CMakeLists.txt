@@ -19,6 +19,7 @@ add_library(openefb_core STATIC
     src/core/flight_plan_file.cpp
     src/core/flight_log_model.cpp
     src/core/fuel_model.cpp
+    src/core/geopdf.cpp
     src/core/faa_chart_catalog.cpp
     src/core/map_poi.cpp
     src/core/moving_map_model.cpp
@@ -84,7 +85,7 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
         set(OPEN_EFB_PLUGIN_NAME win)
         target_compile_definitions(openefb_plugin PRIVATE
             IBM=1 NOMINMAX=1
-            XPLM200=1 XPLM210=1 XPLM300=1 XPLM301=1 XPLM303=1 XPLM400=1
+            XPLM200=1 XPLM210=1 XPLM300=1 XPLM301=1 XPLM303=1 XPLM400=1 XPLM410=1
         )
         target_link_directories(openefb_plugin PRIVATE
             "${OPEN_EFB_XPLANE_SDK_PATH}/Libraries/Win"
@@ -94,7 +95,7 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
     elseif(APPLE)
         set(OPEN_EFB_PLUGIN_NAME mac)
         target_compile_definitions(openefb_plugin PRIVATE
-            APL=1 XPLM200=1 XPLM210=1 XPLM300=1 XPLM301=1 XPLM303=1 XPLM400=1
+            APL=1 XPLM200=1 XPLM210=1 XPLM300=1 XPLM301=1 XPLM303=1 XPLM400=1 XPLM410=1
         )
         target_link_libraries(openefb_plugin PRIVATE
             "${OPEN_EFB_XPLANE_SDK_PATH}/Libraries/Mac/XPLM.framework"
@@ -104,7 +105,7 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
     elseif(UNIX)
         set(OPEN_EFB_PLUGIN_NAME lin)
         target_compile_definitions(openefb_plugin PRIVATE
-            LIN=1 XPLM200=1 XPLM210=1 XPLM300=1 XPLM301=1 XPLM303=1 XPLM400=1
+            LIN=1 XPLM200=1 XPLM210=1 XPLM300=1 XPLM301=1 XPLM303=1 XPLM400=1 XPLM410=1
         )
         find_package(OpenGL REQUIRED)
         target_link_libraries(openefb_plugin PRIVATE OpenGL::GL)

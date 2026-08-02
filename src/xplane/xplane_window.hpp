@@ -27,6 +27,7 @@
 #include <XPLMDisplay.h>
 
 #include <memory>
+#include <chrono>
 #include <optional>
 #include <string>
 #include <vector>
@@ -137,6 +138,10 @@ private:
     void handle_briefing_key(char key, char virtual_key);
     void open_briefing_entry();
     void search_airport();
+    void open_approach_panel(bool destination_endpoint);
+    void select_approach_endpoint(bool destination_endpoint);
+    void apply_selected_approach();
+    void open_selected_approach_plate();
 
     static void draw(XPLMWindowID window_id, void* refcon);
     static int handle_mouse(XPLMWindowID window_id, int x, int y, XPLMMouseStatus status, void* refcon);
@@ -186,6 +191,19 @@ private:
     bool show_map_labels_{true};
     int map_marker_scale_{100};
     bool route_width_slider_dragging_{false};
+    bool flight_plan_expanded_{false};
+    bool approach_panel_open_{false};
+    bool approach_destination_endpoint_{true};
+    std::string selected_approach_identifier_;
+    int selected_approach_transition_{0};
+    bool approach_transition_picker_open_{false};
+    std::vector<std::string> excluded_approach_fixes_;
+    std::string last_clicked_approach_identifier_;
+    std::chrono::steady_clock::time_point last_approach_click_{};
+    int approach_scroll_{0};
+    int approach_fix_scroll_{0};
+    std::string approach_message_;
+    int selected_log_entry_{-1};
     mutable bool show_weather_forecast_{false};
     mutable int page_scroll_pixels_{0};
     mutable EfbPage page_scroll_page_{EfbPage::home};

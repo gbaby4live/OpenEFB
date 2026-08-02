@@ -25,10 +25,34 @@ struct AirportFrequency {
     std::string name;
 };
 
+struct ApproachLeg {
+    int sequence{};
+    std::string identifier;
+    std::string path_terminator;
+    int altitude_feet{};
+    double latitude_degrees{};
+    double longitude_degrees{};
+    bool runway{false};
+};
+
+struct ApproachTransition {
+    std::string identifier;
+    std::vector<ApproachLeg> legs;
+};
+
+struct ApproachProcedure {
+    std::string identifier;
+    std::string display_name;
+    std::string runway;
+    std::vector<ApproachTransition> transitions;
+    std::vector<ApproachLeg> final_legs;
+};
+
 struct AirportProcedures {
     std::vector<std::string> departures;
     std::vector<std::string> arrivals;
     std::vector<std::string> approaches;
+    std::vector<ApproachProcedure> approach_details;
     std::size_t departure_count{};
     std::size_t arrival_count{};
     std::size_t approach_count{};

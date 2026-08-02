@@ -8,6 +8,7 @@
 #include "openefb/core/flight_plan_editor.hpp"
 #include "openefb/core/flight_plan_file.hpp"
 #include "openefb/core/fuel_model.hpp"
+#include "openefb/core/geopdf.hpp"
 #include "openefb/core/moving_map_model.hpp"
 #include "openefb/core/map_poi.hpp"
 #include "openefb/core/navigation_database_model.hpp"
@@ -195,6 +196,22 @@ int main() {
             "external route changes are detected before apply");
     flight_plan_editor.cancel();
     require(!flight_plan_editor.active(), "cancel closes and clears the route draft");
+    auto procedure_route = flight_plan_model.snapshot();
+    procedure_route.approach_legs = {
+        {0, "SARGS", openefb::WaypointKind::fix, 2000, 32.72, -117.25, false},
+        {1, "APP 2", openefb::WaypointKind::other, 0, 0.0, 0.0, false},
+        {2, "RW09", openefb::WaypointKind::coordinate, 71, 32.733, -117.189, true}};
+    const auto complete_route = openefb::complete_flight_plan_legs(procedure_route);
+    require(complete_route.size() == 5 && complete_route[2].identifier == "SARGS" &&
+                complete_route[3].identifier == "RW09" &&
+                complete_route.back().identifier == "KPDX",
+            "flight plan overview merges navigable approach fixes before the destination");
+    require(flight_plan_editor.begin(procedure_route) &&
+                flight_plan_editor.legs().size() == complete_route.size() &&
+                flight_plan_editor.select(2) && flight_plan_editor.remove_selected() &&
+                flight_plan_editor.legs()[2].identifier == "RW09",
+            "flight plan builder exposes approach fixes for individual removal");
+    flight_plan_editor.cancel();
 
     openefb::FlightPlanSnapshot empty_route;
     empty_route.available = true;
@@ -240,10 +257,15 @@ int main() {
                 std::abs(parsed_airport->frequencies[0].megahertz - 119.9) < 0.001,
             "modern 8.33 kHz frequencies supersede legacy airport frequencies");
     std::istringstream procedure_data{
+        "RWY:RW16L,     ,      ,00432, ,ISNQ,3,   ;N47274966,W122182790,0000;\n"
         "SID:010,1,SEA6,RW16L,FIX1;\n"
         "SID:020,1,SEA6,RW16L,FIX2;\n"
         "STAR:010,2,OLM4,ALL,FIX3;\n"
-        "APPCH:010,A,I16L,,FIX4;\n"};
+        "APPCH:010,A,I16L,KENMO,KENMO,K1,P,C,E  A, ,   ,IF, , , , , ,      ,    ,    ,    ,    ,+,05000,     ,18000;\n"
+        "APPCH:020,A,I16L,KENMO,HELZR,K1,P,C,E  B, ,   ,TF, , , , , ,      ,    ,    ,    ,    ,+,04000,     ,18000;\n"
+        "APPCH:010,I,I16L, ,HELZR,K1,P,C,E  I, ,   ,IF, , , , , ,      ,    ,    ,    ,    ,+,03200,     ,18000;\n"
+        "APPCH:020,I,I16L, ,RW16L,K1,P,G,G  M, ,   ,CF, , , , , ,      ,    ,    ,    ,    , ,00432,     ,     ;\n"
+        "APPCH:030,I,I16L, ,MISSD,K1,P,C,E  M, ,   ,TF, , , , , ,      ,    ,    ,    ,    ,+,03000,     ,     ;\n"};
     openefb::parse_airport_procedures(procedure_data, *parsed_airport);
     require(parsed_airport->procedures.departures.size() == 1 &&
                 parsed_airport->procedures.departure_count == 1 &&
@@ -251,6 +273,33 @@ int main() {
                 parsed_airport->procedures.arrivals[0] == "OLM4" &&
                 parsed_airport->procedures.approaches[0] == "I16L",
             "CIFP parser lists unique SIDs, STARs, and approaches");
+    require(parsed_airport->procedures.approach_details.size() == 1 &&
+                parsed_airport->procedures.approach_details[0].display_name == "ILS RWY 16L" &&
+                parsed_airport->procedures.approach_details[0].transitions.size() == 1 &&
+                parsed_airport->procedures.approach_details[0].transitions[0].identifier == "KENMO" &&
+                parsed_airport->procedures.approach_details[0].transitions[0].legs.size() == 2 &&
+                parsed_airport->procedures.approach_details[0].final_legs.size() == 2 &&
+                parsed_airport->procedures.approach_details[0].final_legs.back().runway &&
+                std::abs(parsed_airport->procedures.approach_details[0].final_legs.back().latitude_degrees -
+                         47.463794) < 0.0001 &&
+                parsed_airport->procedures.approach_details[0].final_legs.back().identifier == "RW16L",
+            "CIFP parser preserves transitions, final legs, runway coordinates, and excludes missed legs");
+    openefb::AirportInfoSnapshot ksan_procedures;
+    std::istringstream ksan_cifp{
+        "RWY:RW09,     ,      ,00071, ,ISAN,3,   ;N32439500,W117115000,0000;\n"
+        "APPCH:010,A,I09-Y,MZB,MZB,K2,D, ,V   , ,   ,IF, , , , , ,      ,    ,    ,    ,    , ,     ,     ,18000;\n"
+        "APPCH:020,A,I09-Y,MZB,GATTO,K2,P,C,E   , ,   ,TF, , , , , ,      ,    ,    ,    ,    ,+,02800,     ,     ;\n"
+        "APPCH:030,A,I09-Y,MZB,GATTO,K2,P,C,E  A,R,   ,PI, ,BJC,K2,D, ,      ,2267,7270,2300,0100,+,02000,     ,     ;\n"
+        "APPCH:040,A,I09-Y,MZB,SARGS,K2,E,A,EE B, ,   ,CF, ,ISAN,K2,P,I,      ,2750,0113,0950,0059,+,02000,     ,     ;\n"
+        "APPCH:010,I,I09-Y, ,SARGS,K2,E,A,E  I, ,   ,IF, ,ISAN,K2,P,I,      ,2750,0113,    ,    ,J,02000,02000,18000;\n"};
+    openefb::parse_airport_procedures(ksan_cifp, ksan_procedures);
+    require(ksan_procedures.procedures.approach_details.size() == 1 &&
+                ksan_procedures.procedures.approach_details[0].runway == "09" &&
+                ksan_procedures.procedures.approach_details[0].transitions.size() == 1 &&
+                ksan_procedures.procedures.approach_details[0].transitions[0].legs.size() == 4 &&
+                ksan_procedures.procedures.approach_details[0].transitions[0].legs[1].identifier == "GATTO" &&
+                ksan_procedures.procedures.approach_details[0].transitions[0].legs[2].identifier == "GATTO",
+            "approach variants keep Y/Z in the procedure while normalizing the runway and preserving repeated transition legs");
 
     openefb::WeatherModel weather_model;
     require(!weather_model.snapshot().available, "weather starts unavailable");
@@ -393,6 +442,12 @@ int main() {
     briefing_model.reset_checklist();
     require(briefing_model.completed_checklist_items() == 0,
             "briefing checklist can be reset for a new flight");
+    briefing_model.configure_checklist_for_aircraft("Cessna 172 SP");
+    briefing_model.select_checklist_phase(openefb::ChecklistPhase::takeoff_cruise);
+    require(briefing_model.checklist_aircraft() == "Cessna 172 SP" &&
+                briefing_model.checklist_phase() == openefb::ChecklistPhase::takeoff_cruise &&
+                !briefing_model.checklist().empty(),
+            "offline checklists expose aircraft context and selectable flight phases");
     briefing_model.set_notes("Departure note");
     require(briefing_model.append_note('\n') && briefing_model.append_note('A') &&
                 briefing_model.notes() == "Departure note\nA",
@@ -446,6 +501,20 @@ int main() {
     const auto domestic_charts = openefb::parse_faa_chart_catalog(faa_domestic_catalog, "KABC");
     require(domestic_charts.size() == 1 && domestic_charts.front().pdf_name == "00123AD.PDF",
             "FAA parser falls back to domestic identifiers and ignores deletion placeholders");
+
+    const std::string geopdf_metadata =
+        "/MediaBox[0 0 387.36 594] /VP[<</BBox[9.18 2.628 378.18 591.372]"
+        "/Measure<</GPTS[32.36286 -117.09282 32.36285 -116.53839 "
+        "33.11397 -116.53576 33.11398 -117.09540]"
+        "/LPTS[0.1 0.1 0.9 0.1 0.9 0.9 0.1 0.9]>>>>]";
+    const auto geopdf = openefb::parse_geopdf_reference(geopdf_metadata);
+    const auto chart_center = geopdf ? openefb::project_geopdf_position(
+        *geopdf, 32.7384, -116.8155) : std::nullopt;
+    require(geopdf && chart_center && chart_center->x > 180.0 && chart_center->x < 210.0 &&
+                chart_center->y > 280.0 && chart_center->y < 315.0,
+            "FAA GeoPDF calibration projects live aircraft coordinates onto an approach plate");
+    require(!openefb::project_geopdf_position(*geopdf, 40.0, -116.8),
+            "aircraft outside an approach plate's published vicinity is not drawn on the chart");
 
     const auto places = openefb::parse_overpass_pois(
         "101\t24.556\t-81.782\tHarbor Cafe\tcafe\t\t\t\t\n"
@@ -556,6 +625,31 @@ int main() {
                 fms_output.str().find("NUMENR 3") != std::string::npos &&
                 fms_output.str().find("ADEP KSEA") != std::string::npos,
             "active routes export in X-Plane 1100 FMS format");
+    std::ostringstream current_cycle_fms;
+    require(openefb::write_xplane_fms(current_cycle_fms, imported_plan.legs, "2406") &&
+                current_cycle_fms.str().find("CYCLE 2406") != std::string::npos,
+            "generated FMS plans carry X-Plane's active AIRAC cycle");
+    std::ostringstream approach_fms;
+    const openefb::FlightPlanApproachSelection approach_selection{
+        "KPDX", "10L", "I10L", "BTG", "2607"};
+    require(openefb::write_xplane_fms_with_approach(
+                approach_fms, imported_plan.legs, approach_selection) &&
+                approach_fms.str().find("DESRWY RW10L") != std::string::npos &&
+                approach_fms.str().find("APP I10L") != std::string::npos &&
+                approach_fms.str().find("APPTRANS BTG") != std::string::npos &&
+                approach_fms.str().find("NUMENR 3") != std::string::npos,
+            "procedure-aware FMS plans preserve approach and transition metadata for VPATH");
+    std::ostringstream variant_approach_fms;
+    const openefb::FlightPlanApproachSelection variant_selection{
+        "KSAN", "09", "I09-Y", "MZB", "2406"};
+    auto ksan_route = imported_plan.legs;
+    ksan_route.back().identifier = "KSAN";
+    require(openefb::write_xplane_fms_with_approach(
+                variant_approach_fms, ksan_route, variant_selection) &&
+                variant_approach_fms.str().find("DESRWY RW09\n") != std::string::npos &&
+                variant_approach_fms.str().find("DESRWY RW09-Y") == std::string::npos &&
+                variant_approach_fms.str().find("APP I09-Y\n") != std::string::npos,
+            "Y/Z approach variants never become invalid runway identifiers in X-Plane plans");
     require(openefb::xplane_fms_filename(imported_plan.legs) == "KSEA-KPDX.fms",
             "exported FMS filenames identify departure and destination");
     auto unusual_filename_legs = imported_plan.legs;
@@ -640,6 +734,8 @@ int main() {
             "flight logger starts airborne route tracking from the active plan");
     log_telemetry.latitude_degrees += 0.01;
     log_telemetry.altitude_feet = 2500.0;
+    log_telemetry.ground_speed_knots = 135.0;
+    log_telemetry.vertical_speed_fpm = 900.0;
     flight_log.update(log_telemetry, log_route, false, 60.0, "2026-07-27 10:02 UTC");
     log_telemetry.ground_speed_knots = 20.0;
     log_telemetry.vertical_speed_fpm = -420.0;
@@ -647,6 +743,8 @@ int main() {
     require(!flight_log.snapshot().entries.empty() &&
                 flight_log.snapshot().entries.front().maximum_altitude_feet >= 2500.0 &&
                 flight_log.snapshot().entries.front().landing_vertical_speed_fpm == -420.0 &&
+                flight_log.snapshot().entries.front().maximum_ground_speed_knots >= 135.0 &&
+                flight_log.snapshot().entries.front().maximum_climb_rate_fpm >= 900.0 &&
                 flight_log.snapshot().entries.front().completed_utc == "2026-07-27 10:03 UTC" &&
                 flight_log.snapshot().entries.front().track.size() >= 3,
             "flight logger records timestamped landing metrics and route track");

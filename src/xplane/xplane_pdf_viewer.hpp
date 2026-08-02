@@ -6,6 +6,15 @@
 
 namespace openefb::xplane {
 
+struct PdfAircraftOverlay {
+    bool available{false};
+    double latitude_degrees{};
+    double longitude_degrees{};
+    double heading_degrees{};
+    double altitude_feet{};
+    int approach_altitude_feet{};
+};
+
 class XPlanePdfViewer final {
 public:
     XPlanePdfViewer();
@@ -18,7 +27,8 @@ public:
     void previous_page();
     void next_page();
     void scroll(int wheel_clicks);
-    void draw(int left, int top, int right, int bottom);
+    void draw(int left, int top, int right, int bottom,
+              const PdfAircraftOverlay& aircraft = {});
 
     [[nodiscard]] bool visible() const noexcept;
     [[nodiscard]] int page_number() const noexcept;

@@ -38,6 +38,15 @@ std::string uppercase(std::string value) {
     return value;
 }
 
+std::string fms_identifier(std::string value, std::size_t index) {
+    value = uppercase(std::move(value));
+    value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char character) {
+        return !std::isalnum(character) && character != '-' && character != '_';
+    }), value.end());
+    if (value.empty()) value = "OPENEFB" + std::to_string(index + 1);
+    return value;
+}
+
 } // namespace
 
 FlightPlanFileResult parse_xplane_fms(std::istream& input) {
@@ -83,9 +92,13 @@ FlightPlanFileResult parse_xplane_fms(std::istream& input) {
     return {true, std::move(legs), "Flight plan imported"};
 }
 
-bool write_xplane_fms(std::ostream& output, const std::vector<FlightPlanLeg>& legs) {
+bool write_xplane_fms(std::ostream& output, const std::vector<FlightPlanLeg>& legs,
+                      std::string cycle) {
     if (legs.empty() || legs.size() > 100) return false;
-    output << "I\n1100 Version\nCYCLE 0000\n"
+    if (cycle.size() != 4 || !std::all_of(cycle.begin(), cycle.end(), [](unsigned char value) {
+            return std::isdigit(value) != 0;
+        })) cycle = "0000";
+    output << "I\n1100 Version\nCYCLE " << cycle << '\n'
            << "ADEP " << legs.front().identifier << '\n'
            << "ADES " << legs.back().identifier << '\n'
            << "NUMENR " << legs.size() << '\n';
@@ -94,6 +107,42 @@ bool write_xplane_fms(std::ostream& output, const std::vector<FlightPlanLeg>& le
         const auto& leg = legs[index];
         const char* role = index == 0 ? "ADEP" : index + 1 == legs.size() ? "ADES" : "DRCT";
         output << code_from_kind(leg.kind) << ' ' << leg.identifier << ' ' << role << ' '
+               << leg.altitude_feet << ' ' << leg.latitude_degrees << ' '
+               << leg.longitude_degrees << '\n';
+    }
+    return static_cast<bool>(output);
+}
+
+bool write_xplane_fms_with_approach(
+    std::ostream& output, const std::vector<FlightPlanLeg>& legs,
+    const FlightPlanApproachSelection& approach) {
+    if (legs.size() < 2 || legs.size() > 100 ||
+        uppercase(legs.back().identifier) != uppercase(approach.airport_identifier) ||
+        approach.runway.empty() || approach.approach_identifier.empty()) {
+        return false;
+    }
+    auto runway = uppercase(approach.runway);
+    if (runway.starts_with("RW")) runway.erase(0, 2);
+    if (runway.empty()) return false;
+    auto cycle = approach.cycle;
+    if (cycle.size() != 4 || !std::all_of(cycle.begin(), cycle.end(), [](unsigned char value) {
+            return std::isdigit(value) != 0;
+        })) cycle = "0000";
+
+    output << "I\n1100 Version\nCYCLE " << cycle << '\n'
+           << "ADEP " << uppercase(legs.front().identifier) << '\n'
+           << "ADES " << uppercase(approach.airport_identifier) << '\n'
+           << "DESRWY RW" << runway << '\n'
+           << "APP " << uppercase(approach.approach_identifier) << '\n';
+    if (!approach.transition_identifier.empty())
+        output << "APPTRANS " << uppercase(approach.transition_identifier) << '\n';
+    output << "NUMENR " << legs.size() << '\n';
+    output << std::fixed << std::setprecision(6);
+    for (std::size_t index = 0; index < legs.size(); ++index) {
+        const auto& leg = legs[index];
+        const char* role = index == 0 ? "ADEP" : index + 1 == legs.size() ? "ADES" : "DRCT";
+        output << code_from_kind(leg.kind) << ' ' << fms_identifier(leg.identifier, index)
+               << ' ' << role << ' '
                << leg.altitude_feet << ' ' << leg.latitude_degrees << ' '
                << leg.longitude_degrees << '\n';
     }
