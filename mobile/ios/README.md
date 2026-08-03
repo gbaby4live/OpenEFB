@@ -1,9 +1,10 @@
 # OpenEFB Mobile for iOS
 
 This native SwiftUI shell hosts the same locally served OpenEFB flight deck as
-the installable web app. It keeps the X-Plane computer address, requests Apple's
-local-network permission, preserves the paired web session, and supports iPhone
-and iPad rotation.
+the installable web app. It accepts only private/local computer addresses,
+requests Apple's local-network permission, preserves the paired WebKit session,
+reconnects after foregrounding, confines embedded navigation to the paired
+origin, and supports iPhone and iPad rotation.
 
 ## Build prerequisites
 
@@ -23,6 +24,12 @@ Select the developer team under Signing & Capabilities, choose a physical iPhone
 and Run. TestFlight distribution requires an App Store Connect record and an
 Archive uploaded from Xcode.
 
-The current simulator bridge uses authenticated local HTTP. The broad transport
-exception in `Info.plist` is limited by product behavior to the address entered by
-the pilot, but it must be replaced by pinned TLS before an App Store submission.
+The `ios-ci.yml` GitHub workflow performs the same project generation and an
+unsigned `build-for-testing` against the iOS Simulator SDK. It proves that the
+app and unit-test bundle compile without requiring repository signing secrets.
+
+The current simulator bridge uses authenticated local HTTP. The WebKit-only
+transport exception in `Info.plist` is additionally constrained by the app's
+private-host and same-origin checks, but it must be removed in favor of pinned
+encrypted transport before an App Store submission. Follow
+`../../docs/ios-release-checklist.md` for the release gates.

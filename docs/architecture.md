@@ -33,6 +33,24 @@ points, simulator messages, and logging through `XPLMDebugString`.
 - Local HTTP is session-authenticated but not encrypted and is intended only for
   a trusted private network. Pinned TLS remains mandatory before App Store release.
 
+### Native iOS shell
+
+- SwiftUI owns connection state and retains only the validated OpenEFB computer
+  address in user defaults; pairing credentials remain inside WebKit's protected
+  website data store.
+- Address validation accepts only private IPv4, local/private IPv6, localhost,
+  and `.local` hosts. Credentials, public websites, unsupported schemes, query
+  strings, and fragments are rejected or stripped before navigation.
+- `WKNavigationDelegate` confines embedded navigation and streamed documents to
+  the paired origin. User-selected external links are handed to Safari instead
+  of receiving the OpenEFB web session.
+- Foreground lifecycle events reload from the original server while preserving
+  cookies and local app data. Process termination and network errors have visible
+  recovery behavior.
+- The Xcode project is generated from `mobile/ios/project.yml`; macOS CI compiles
+  the app and unit-test bundle without signing. No Apple credential is stored in
+  the repository.
+
 The first implementation milestone is an in-simulator shell: a menu command,
 window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
 

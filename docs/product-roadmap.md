@@ -145,7 +145,9 @@ sources while preserving the same practical pilot workflow.
   editing, revision conflict detection, and explicit Apply confirmation
 - Mobile M3: delivered approach/transition selection, removable procedure fixes,
   chart and briefing streaming, reconnect handling, and cache-capable app shell
-- Mobile M4 source: SwiftUI/WKWebView iPhone and iPad wrapper, local-network usage
-  disclosure, privacy manifest, rotation, and preserved web session
+- Mobile M4 source: hardened SwiftUI/WKWebView iPhone and iPad wrapper,
+  private-host validation, same-origin navigation, visible recovery, foreground
+  reconnect, local-network disclosure, privacy manifest, rotation, unit tests,
+  and unsigned macOS CI compilation
 - Mobile M4 release blockers: pinned encrypted transport, macOS/Xcode compilation,
   Apple signing, physical-device validation, App Store Connect, and TestFlight
