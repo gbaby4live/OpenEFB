@@ -5,6 +5,8 @@ import Network
 @MainActor
 final class ConnectionModel: ObservableObject {
     @Published var address: String
+    @Published var verificationCode = ""
+    @Published var pairingCode = ""
     @Published private(set) var connectedURL: URL?
     @Published private(set) var error = ""
     @Published private(set) var networkAvailable = true
@@ -29,12 +31,21 @@ final class ConnectionModel: ObservableObject {
     deinit { monitor.cancel() }
 
     func connect() {
+        let identity = verificationCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        let session = pairingCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard identity.count == 6, identity.allSatisfy(\.isNumber),
+              session.count == 6, session.allSatisfy(\.isNumber) else {
+            error = "Enter both six-digit codes shown in OpenEFB."
+            return
+        }
         switch OpenEFBAddress.normalize(address) {
         case .success(let url):
             address = url.absoluteString
             defaults.set(address, forKey: Self.addressKey)
             error = ""
-            connectedURL = url
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            components?.queryItems = [URLQueryItem(name: "nativePairCode", value: session)]
+            connectedURL = components?.url ?? url
         case .failure(let validationError):
             error = validationError.localizedDescription
         }

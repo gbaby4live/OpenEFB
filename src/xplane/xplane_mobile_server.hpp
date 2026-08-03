@@ -7,6 +7,7 @@
 #include "openefb/core/telemetry_model.hpp"
 #include "openefb/core/traffic_model.hpp"
 #include "openefb/core/weather_model.hpp"
+#include "windows_tls.hpp"
 
 #include <XPLMProcessing.h>
 
@@ -30,6 +31,7 @@ struct MobileServerStatus {
     bool running{false};
     std::string url;
     std::string pairing_code;
+    std::string identity_code;
     std::string message{"Mobile companion stopped"};
 };
 
@@ -101,6 +103,7 @@ private:
     std::deque<CommandResult> command_results_;
     std::uint64_t next_command_id_{1};
     std::string session_token_;
+    WindowsTlsContext tls_context_;
     MobileServerStatus status_;
     std::thread worker_;
     std::atomic_bool stopping_{false};

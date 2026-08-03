@@ -245,7 +245,8 @@ PLUGIN_API int XPluginEnable() {
         PluginRuntime::xplane_log("airport archive unavailable");
     }
     if (!runtime->mobile_server.start()) {
-        PluginRuntime::xplane_log("mobile companion unavailable");
+        const auto mobile = runtime->mobile_server.status();
+        PluginRuntime::xplane_log("mobile companion unavailable: " + mobile.message);
     } else {
         const auto mobile = runtime->mobile_server.status();
         PluginRuntime::xplane_log("mobile companion ready at " + mobile.url);

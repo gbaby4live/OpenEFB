@@ -16,11 +16,18 @@ TestFlight or App Store claim is not complete until every gate below is satisfie
 
 ## Transport security
 
-- [ ] Replace authenticated local HTTP with an encrypted transport
-- [ ] Pin the OpenEFB simulator bridge identity in the native client
-- [ ] Remove `NSAllowsArbitraryLoadsInWebContent`
+- [x] Replace authenticated local HTTP with Schannel HTTPS
+- [x] Pin the OpenEFB simulator bridge identity in the native client
+- [x] Remove `NSAllowsArbitraryLoadsInWebContent`
 - [ ] Re-run pairing, replay, wrong-code, expired-session, and hostile-LAN tests
 - [ ] Document certificate/key rotation and recovery
+
+The private identity key is non-exportable and remains in the Windows user's CNG
+key storage. The public certificate is stored at
+`%LOCALAPPDATA%\OpenEFB\mobile-identity.cer`. If that public file is lost or
+replaced, OpenEFB creates a new certificate and shows a new ID code; the phone
+rejects the change until the pilot enters that new code. A future Settings action
+will provide intentional full key rotation without requiring command-line tools.
 
 ## Apple build and device acceptance
 

@@ -344,8 +344,8 @@ always lists every route and approach leg with page scrolling.
 
 OpenEFB can host a paired mobile flight deck on the X-Plane computer for an
 iPhone or other modern phone connected to the same trusted Wi-Fi network. Open
-the in-simulator About page to find the local URL and six-digit pairing code,
-then enter both in Safari. The responsive companion shows live aircraft
+the in-simulator About page to find the encrypted local URL, stable six-digit
+identity code, and per-session pairing code. The responsive companion shows live aircraft
 telemetry, an OpenStreetMap moving map, the active magenta route, nearby traffic,
 route progress, and departure/destination METARs. Use Safari's **Add to Home
 Screen** action to launch it like an app.
@@ -358,11 +358,12 @@ approaches and transitions; exclude optional procedure fixes; and explicitly
 apply the result to the simulator. Briefing streams the desktop OpenEFB chart and
 document library into an in-app PDF viewer. The shell reconnects after temporary
 network loss and includes installable-app cache metadata where the browser permits
-local HTTP service workers.
+secure-context service workers.
 
 The pairing exchange creates a random 256-bit session token and every command is
-accepted only on X-Plane's main thread. Local HTTP transport is authenticated but
-not encrypted; use it only on a trusted private network. The first Windows launch
+accepted only on X-Plane's main thread. Windows Schannel encrypts the local HTTPS
+channel, while the native app verifies the displayed identity code and pins the
+full certificate fingerprint in the device Keychain. The first Windows launch
 may require allowing X-Plane through Windows Firewall on private networks. A native
 SwiftUI iPhone/iPad shell is provided under `mobile/ios`; device signing and
 TestFlight require macOS, Xcode, and the maintainer's Apple Developer account.
@@ -371,5 +372,4 @@ paired WebKit session across backgrounding, rechecks the simulator when returnin
 to the foreground, and prevents the embedded browser from navigating to an
 unrelated origin. GitHub's macOS workflow generates the Xcode project and compiles
 the app and its address-validation tests for the iOS Simulator. See
-`docs/ios-release-checklist.md` for the remaining encrypted-transport and signing
-gates.
+`docs/ios-release-checklist.md` for the remaining device and signing gates.

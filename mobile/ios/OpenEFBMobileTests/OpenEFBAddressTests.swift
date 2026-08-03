@@ -2,9 +2,14 @@ import XCTest
 @testable import OpenEFBMobile
 
 final class OpenEFBAddressTests: XCTestCase {
-    func testAddsLocalHTTPAndDefaultPort() throws {
+    func testCertificateVerificationCodeUsesLeadingHashBytes() {
+        let fingerprint = Data([0x12, 0x34, 0x56, 0x78] + Array(repeating: 0, count: 28))
+        XCTAssertEqual(CertificateIdentity.verificationCode(fingerprint: fingerprint), "419896")
+    }
+
+    func testAddsLocalHTTPSAndDefaultPort() throws {
         let url = try OpenEFBAddress.normalize("192.168.1.25").get()
-        XCTAssertEqual(url.absoluteString, "http://192.168.1.25:8383/")
+        XCTAssertEqual(url.absoluteString, "https://192.168.1.25:8383/")
     }
 
     func testPreservesPrivateHTTPSAndPort() throws {
@@ -30,6 +35,11 @@ final class OpenEFBAddressTests: XCTestCase {
     func testRejectsUnsupportedScheme() {
         XCTAssertEqual(OpenEFBAddress.normalize("ftp://192.168.1.3").failure,
                        .unsupportedScheme)
+    }
+
+    func testRejectsUnencryptedHTTP() {
+        XCTAssertEqual(OpenEFBAddress.normalize("http://192.168.1.3").failure,
+                       .insecureScheme)
     }
 
     func testRejectsCredentials() {

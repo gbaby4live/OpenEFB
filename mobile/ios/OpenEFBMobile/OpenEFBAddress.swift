@@ -3,12 +3,14 @@ import Foundation
 enum OpenEFBAddressError: LocalizedError, Equatable {
     case invalid
     case unsupportedScheme
+    case insecureScheme
     case publicHost
 
     var errorDescription: String? {
         switch self {
         case .invalid: return "Enter the complete OpenEFB address shown in X-Plane."
-        case .unsupportedScheme: return "The OpenEFB address must begin with http:// or https://."
+        case .unsupportedScheme: return "The OpenEFB address must begin with https://."
+        case .insecureScheme: return "Use the encrypted https:// address displayed by OpenEFB."
         case .publicHost: return "Use the private-network address displayed by OpenEFB, not a public website."
         }
     }
@@ -17,14 +19,16 @@ enum OpenEFBAddressError: LocalizedError, Equatable {
 enum OpenEFBAddress {
     static func normalize(_ input: String) -> Result<URL, OpenEFBAddressError> {
         var value = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !value.contains("://") { value = "http://" + value }
+        if !value.contains("://") { value = "https://" + value }
         guard var components = URLComponents(string: value),
               let scheme = components.scheme?.lowercased(),
               let host = components.host?.lowercased(), !host.isEmpty,
               components.user == nil, components.password == nil else {
             return .failure(.invalid)
         }
-        guard scheme == "http" || scheme == "https" else { return .failure(.unsupportedScheme) }
+        guard scheme == "https" else {
+            return .failure(scheme == "http" ? .insecureScheme : .unsupportedScheme)
+        }
         guard isPrivateHost(host) else { return .failure(.publicHost) }
         components.scheme = scheme
         components.host = host

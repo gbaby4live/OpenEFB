@@ -28,8 +28,9 @@ The `ios-ci.yml` GitHub workflow performs the same project generation and an
 unsigned `build-for-testing` against the iOS Simulator SDK. It proves that the
 app and unit-test bundle compile without requiring repository signing secrets.
 
-The current simulator bridge uses authenticated local HTTP. The WebKit-only
-transport exception in `Info.plist` is additionally constrained by the app's
-private-host and same-origin checks, but it must be removed in favor of pinned
-encrypted transport before an App Store submission. Follow
-`../../docs/ios-release-checklist.md` for the release gates.
+The simulator bridge uses local HTTPS backed by Windows Schannel. On first
+connection, enter the ID and SESSION codes displayed by OpenEFB. The native shell
+verifies the certificate-derived ID before accepting the self-signed server,
+stores the full certificate fingerprint in the device Keychain, and automatically
+passes the separate one-time SESSION code to the web flight deck. Follow
+`../../docs/ios-release-checklist.md` for the remaining device and release gates.
