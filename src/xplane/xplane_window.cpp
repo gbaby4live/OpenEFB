@@ -2503,7 +2503,8 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                   mobile_status.running ? shortened(mobile_status.url, 58) : mobile_status.message);
         draw_card(left, top - 526, card_right, top - 622,
                   "Mobile pairing code",
-                  mobile_status.running ? mobile_status.pairing_code + "  |  same Wi-Fi  |  read only"
+                  mobile_status.running ? "SESSION " + mobile_status.pairing_code +
+                                              "  |  ID " + mobile_status.identity_code
                                         : "Start OpenEFB to enable phone pairing");
         break;
     }

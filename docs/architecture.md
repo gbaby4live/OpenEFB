@@ -17,7 +17,7 @@ points, simulator messages, and logging through `XPLMDebugString`.
 - `XPlaneMobileServer` samples normalized model snapshots from an XPLM flight
   loop on the simulator main thread. The network worker receives only an
   immutable JSON copy and never calls XPLM or reads mutable core models.
-- A bounded Winsock HTTP server listens on port 8383 while the plugin is enabled
+- A bounded Winsock HTTPS server listens on port 8383 while the plugin is enabled
   and closes before telemetry, traffic, route, or weather adapters stop.
 - Static mobile assets ship inside the plugin package. The browser client trades
   the per-session six-digit pairing code for a random 256-bit session token and
@@ -30,8 +30,10 @@ points, simulator messages, and logging through `XPLMDebugString`.
 - Library files are served only by an authenticated numeric entry selected from
   the model-published allowlist; client paths and traversal strings are never
   accepted as document locations.
-- Local HTTP is session-authenticated but not encrypted and is intended only for
-  a trusted private network. Pinned TLS remains mandatory before App Store release.
+- Schannel uses a persistent CNG private key and an OpenEFB-owned public
+  certificate under the Windows user's local application data. The About page
+  shows a stable six-digit certificate identity code separately from the random
+  per-session pairing code.
 
 ### Native iOS shell
 
@@ -39,8 +41,12 @@ points, simulator messages, and logging through `XPLMDebugString`.
   address in user defaults; pairing credentials remain inside WebKit's protected
   website data store.
 - Address validation accepts only private IPv4, local/private IPv6, localhost,
-  and `.local` hosts. Credentials, public websites, unsupported schemes, query
+  and `.local` hosts over HTTPS. Credentials, public websites, unsupported schemes, query
   strings, and fragments are rejected or stripped before navigation.
+- WebKit accepts the local self-signed certificate only when its SHA-256-derived
+  identity code matches the value shown inside X-Plane, then saves the complete
+  fingerprint in the iOS Keychain. A changed certificate requires explicit
+  re-pairing; silent trust-on-first-use is not allowed.
 - `WKNavigationDelegate` confines embedded navigation and streamed documents to
   the paired origin. User-selected external links are handed to Safari instead
   of receiving the OpenEFB web session.

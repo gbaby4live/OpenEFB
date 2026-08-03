@@ -10,6 +10,7 @@ struct ContentView: View {
                 ZStack(alignment: .topTrailing) {
                     OpenEFBWebView(
                         url: connectedURL,
+                        verificationCode: connection.verificationCode,
                         reloadGeneration: connection.reloadGeneration,
                         onReady: connection.reportWebReady,
                         onFailure: connection.reportWebFailure
@@ -74,7 +75,7 @@ private struct ConnectionView: View {
                         )
                     Text("OPEN EFB MOBILE").font(.caption.bold()).tracking(2).foregroundStyle(.cyan)
                     Text("Connect to your flight deck").font(.largeTitle.bold())
-                    Text("Enter the complete address shown on the OpenEFB About page while this device and the X-Plane computer are on the same private network.")
+                    Text("Enter the encrypted address plus the ID and SESSION codes shown on the OpenEFB About page. ID verifies your computer; SESSION authorizes this flight deck.")
                         .foregroundStyle(.secondary)
 
                     Label(model.networkAvailable ? "Network available" : "Waiting for a network connection",
@@ -82,7 +83,7 @@ private struct ConnectionView: View {
                         .font(.caption.bold())
                         .foregroundStyle(model.networkAvailable ? .green : .orange)
 
-                    TextField("http://192.168.1.10:8383", text: $model.address)
+                    TextField("https://192.168.1.10:8383", text: $model.address)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
@@ -91,6 +92,20 @@ private struct ConnectionView: View {
                         .padding(14)
                         .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
                         .accessibilityLabel("OpenEFB computer address")
+
+                    TextField("Six-digit identity code", text: $model.verificationCode)
+                        .keyboardType(.numberPad)
+                        .textContentType(.oneTimeCode)
+                        .padding(14)
+                        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+                        .accessibilityLabel("OpenEFB identity code")
+
+                    TextField("Six-digit session code", text: $model.pairingCode)
+                        .keyboardType(.numberPad)
+                        .textContentType(.oneTimeCode)
+                        .padding(14)
+                        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+                        .accessibilityLabel("OpenEFB session code")
 
                     Button("Open Flight Deck", action: model.connect)
                         .frame(maxWidth: .infinity)
@@ -111,7 +126,7 @@ private struct ConnectionView: View {
                             .accessibilityIdentifier("connection-error")
                     }
 
-                    Text("For safety, the native app accepts only private-network, localhost, or .local OpenEFB addresses.")
+                    Text("The app accepts encrypted private-network addresses only and pins the verified OpenEFB certificate on this device.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

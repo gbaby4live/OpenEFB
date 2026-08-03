@@ -68,6 +68,7 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
         src/xplane/xplane_traffic.cpp
         src/xplane/xplane_weather.cpp
         src/xplane/xplane_window.cpp
+        src/xplane/windows_tls.cpp
     )
     target_link_libraries(openefb_plugin PRIVATE OpenEFB::core)
     target_include_directories(openefb_plugin PRIVATE
@@ -92,7 +93,10 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
             "${OPEN_EFB_XPLANE_SDK_PATH}/Libraries/Win"
         )
         target_link_libraries(openefb_plugin PRIVATE XPLM_64)
-        target_link_libraries(openefb_plugin PRIVATE opengl32 windowscodecs winhttp shell32 windowsapp ws2_32)
+        target_link_libraries(openefb_plugin PRIVATE
+            opengl32 windowscodecs winhttp shell32 windowsapp ws2_32
+            secur32 crypt32 ncrypt
+        )
     elseif(APPLE)
         set(OPEN_EFB_PLUGIN_NAME mac)
         target_compile_definitions(openefb_plugin PRIVATE
@@ -163,4 +167,20 @@ if(OPEN_EFB_BUILD_TESTS)
     target_link_libraries(openefb_core_tests PRIVATE OpenEFB::core)
     target_compile_features(openefb_core_tests PRIVATE cxx_std_20)
     add_test(NAME openefb_core_tests COMMAND openefb_core_tests)
+
+    if(WIN32)
+        add_executable(openefb_windows_tls_tests
+            tests/windows_tls_tests.cpp
+            src/xplane/windows_tls.cpp
+        )
+        target_include_directories(openefb_windows_tls_tests PRIVATE src/xplane)
+        target_compile_features(openefb_windows_tls_tests PRIVATE cxx_std_20)
+        target_compile_definitions(openefb_windows_tls_tests PRIVATE
+            IBM=1 NOMINMAX=1 WIN32_LEAN_AND_MEAN=1
+        )
+        target_compile_options(openefb_windows_tls_tests PRIVATE /W4 /permissive-)
+        target_link_libraries(openefb_windows_tls_tests PRIVATE secur32 crypt32 ncrypt ws2_32 winhttp)
+        add_test(NAME openefb_windows_tls_tests COMMAND openefb_windows_tls_tests)
+        set_tests_properties(openefb_windows_tls_tests PROPERTIES SKIP_RETURN_CODE 77)
+    endif()
 endif()

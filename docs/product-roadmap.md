@@ -149,5 +149,7 @@ sources while preserving the same practical pilot workflow.
   private-host validation, same-origin navigation, visible recovery, foreground
   reconnect, local-network disclosure, privacy manifest, rotation, unit tests,
   and unsigned macOS CI compilation
-- Mobile M4 release blockers: pinned encrypted transport, macOS/Xcode compilation,
+- Mobile M5 source: Schannel HTTPS, persistent Windows identity, separate identity
+  and session codes, iOS Keychain certificate pinning, and ATS exception removal
+- Mobile M5 release blockers: hostile-LAN acceptance, intentional key-rotation UI,
   Apple signing, physical-device validation, App Store Connect, and TestFlight

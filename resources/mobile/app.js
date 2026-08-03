@@ -393,5 +393,10 @@ canvas.addEventListener("pointerup", () => { dragStart = null; });
 window.addEventListener("resize", drawMap);
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/service-worker.js").catch(() => {});
-if (sessionToken) refresh(true); else disconnect("");
+const nativePairCode = new URL(location.href).searchParams.get("nativePairCode") || "";
+if (/^\d{6}$/.test(nativePairCode) && !sessionToken) {
+  $("pair-code").value = nativePairCode;
+  history.replaceState({}, "", location.pathname);
+  $("pair-form").requestSubmit();
+} else if (sessionToken) refresh(true); else disconnect("");
 setInterval(() => refresh(false), 1000);

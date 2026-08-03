@@ -209,7 +209,7 @@ std::string local_ipv4() {
     return result;
 }
 
-void send_response(SOCKET socket, int status, std::string_view type,
+void send_response(WindowsTlsConnection& connection, int status, std::string_view type,
                    std::string_view body, bool no_store = false) {
     const char* label = status == 200 ? "OK" : status == 202 ? "Accepted" :
         status == 400 ? "Bad Request" : status == 401 ? "Unauthorized" :
@@ -223,14 +223,8 @@ void send_response(SOCKET socket, int status, std::string_view type,
            << (no_store ? "Cache-Control: no-store\r\n" : "Cache-Control: public, max-age=300\r\n")
            << "Connection: close\r\n\r\n";
     const auto header_text = header.str();
-    send(socket, header_text.data(), static_cast<int>(header_text.size()), 0);
-    std::size_t sent{};
-    while (sent < body.size()) {
-        const int count = send(socket, body.data() + sent,
-                               static_cast<int>(std::min<std::size_t>(body.size() - sent, 16384)), 0);
-        if (count <= 0) break;
-        sent += static_cast<std::size_t>(count);
-    }
+    if (!connection.send(header_text)) return;
+    (void)connection.send(body);
 }
 #endif
 
@@ -259,6 +253,11 @@ XPlaneMobileServer::~XPlaneMobileServer() { stop(); }
 bool XPlaneMobileServer::start() {
 #if IBM
     if (worker_.joinable()) return true;
+    if (!tls_context_.initialize({})) {
+        std::lock_guard lock(mutex_);
+        status_.message = "Mobile HTTPS identity could not be initialized";
+        return false;
+    }
     WSADATA winsock{};
     if (WSAStartup(MAKEWORD(2, 2), &winsock) != 0) {
         std::lock_guard lock(mutex_);
@@ -291,8 +290,9 @@ bool XPlaneMobileServer::start() {
         std::lock_guard lock(mutex_);
         status_.running = true;
         status_.pairing_code = pairing_code();
-        status_.url = "http://" + local_ipv4() + ":" + std::to_string(mobile_port);
-        status_.message = "Mobile flight deck ready on the same Wi-Fi";
+        status_.identity_code = std::string(tls_context_.verification_code());
+        status_.url = "https://" + local_ipv4() + ":" + std::to_string(mobile_port);
+        status_.message = "Encrypted mobile flight deck ready on the same Wi-Fi";
         session_token_ = session_token();
         pending_commands_.clear();
         command_results_.clear();
@@ -335,6 +335,7 @@ void XPlaneMobileServer::stop() {
     status_.running = false;
     status_.message = "Mobile companion stopped";
     session_token_.clear();
+    tls_context_.reset();
     pending_commands_.clear();
     command_results_.clear();
 }
@@ -537,15 +538,15 @@ void XPlaneMobileServer::serve() {
 
 void XPlaneMobileServer::handle_client(std::uintptr_t client_socket) {
 #if IBM
-    const SOCKET client = static_cast<SOCKET>(client_socket);
+    auto connection = tls_context_.accept(client_socket);
+    if (!connection) return;
     std::string request;
     request.reserve(8192);
-    std::array<char, 4096> buffer{};
     std::size_t expected_size{};
     while (request.size() < 65536) {
-        const int received = recv(client, buffer.data(), static_cast<int>(buffer.size()), 0);
-        if (received <= 0) break;
-        request.append(buffer.data(), static_cast<std::size_t>(received));
+        std::string plaintext;
+        if (!connection->receive(plaintext)) break;
+        request.append(plaintext);
         const auto headers_end = request.find("\r\n\r\n");
         if (headers_end == std::string::npos) continue;
         if (!expected_size) {
@@ -561,7 +562,7 @@ void XPlaneMobileServer::handle_client(std::uintptr_t client_socket) {
                 catch (...) { body_size = 65537; }
             }
             if (body_size > 60000) {
-                send_response(client, 400, "application/json", "{\"error\":\"request too large\"}", true);
+                send_response(*connection, 400, "application/json", "{\"error\":\"request too large\"}", true);
                 return;
             }
             expected_size = headers_end + 4 + body_size;
@@ -596,10 +597,10 @@ void XPlaneMobileServer::handle_client(std::uintptr_t client_socket) {
             token = session_token_;
         }
         if (query_value("code") != current_status.pairing_code) {
-            send_response(client, 401, "application/json", "{\"error\":\"pairing code required\"}", true);
+            send_response(*connection, 401, "application/json", "{\"error\":\"pairing code required\"}", true);
             return;
         }
-        send_response(client, 200, "application/json; charset=utf-8",
+        send_response(*connection, 200, "application/json; charset=utf-8",
                       "{\"version\":\"2.0\",\"token\":\"" + token + "\"}", true);
         return;
     }
@@ -613,27 +614,27 @@ void XPlaneMobileServer::handle_client(std::uintptr_t client_socket) {
             snapshot = snapshot_json_;
         }
         if (query_value("code") != current_status.pairing_code) {
-            send_response(client, 401, "application/json", "{\"error\":\"pairing code required\"}", true);
+            send_response(*connection, 401, "application/json", "{\"error\":\"pairing code required\"}", true);
             return;
         }
-        send_response(client, 200, "application/json; charset=utf-8", snapshot, true);
+        send_response(*connection, 200, "application/json; charset=utf-8", snapshot, true);
         return;
     }
 
     if (target.starts_with("/api/v2/") && !authenticated()) {
-        send_response(client, 401, "application/json", "{\"error\":\"session expired\"}", true);
+        send_response(*connection, 401, "application/json", "{\"error\":\"session expired\"}", true);
         return;
     }
     if (method == "GET" && target.starts_with("/api/v2/snapshot")) {
         std::string snapshot;
         { std::lock_guard lock(mutex_); snapshot = snapshot_json_; }
-        send_response(client, 200, "application/json; charset=utf-8", snapshot, true);
+        send_response(*connection, 200, "application/json; charset=utf-8", snapshot, true);
         return;
     }
     if (method == "GET" && target.starts_with("/api/v2/airport")) {
         std::string airport;
         { std::lock_guard lock(mutex_); airport = airport_json_; }
-        send_response(client, 200, "application/json; charset=utf-8", airport, true);
+        send_response(*connection, 200, "application/json; charset=utf-8", airport, true);
         return;
     }
     if (method == "GET" && target.starts_with("/api/v2/library/file")) {
@@ -644,27 +645,27 @@ void XPlaneMobileServer::handle_client(std::uintptr_t client_socket) {
             if (id && *id < library_paths_.size()) path = library_paths_[static_cast<std::size_t>(*id)];
         }
         if (path.empty() || !std::filesystem::is_regular_file(path)) {
-            send_response(client, 404, "application/json", "{\"error\":\"document unavailable\"}", true);
+            send_response(*connection, 404, "application/json", "{\"error\":\"document unavailable\"}", true);
             return;
         }
         const auto file = read_file(path);
         if (file.empty() || file.size() > 32 * 1024 * 1024) {
-            send_response(client, 404, "application/json", "{\"error\":\"document unavailable\"}", true);
+            send_response(*connection, 404, "application/json", "{\"error\":\"document unavailable\"}", true);
             return;
         }
-        send_response(client, 200, content_type(path), file, true);
+        send_response(*connection, 200, content_type(path), file, true);
         return;
     }
     if (method == "GET" && target.starts_with("/api/v2/library")) {
         std::string library;
         { std::lock_guard lock(mutex_); library = library_json_; }
-        send_response(client, 200, "application/json; charset=utf-8", library, true);
+        send_response(*connection, 200, "application/json; charset=utf-8", library, true);
         return;
     }
     if (method == "GET" && target.starts_with("/api/v2/command")) {
         const auto id = unsigned_number(query_value("id"));
         if (!id) {
-            send_response(client, 400, "application/json", "{\"error\":\"command id required\"}", true);
+            send_response(*connection, 400, "application/json", "{\"error\":\"command id required\"}", true);
             return;
         }
         std::optional<CommandResult> result;
@@ -675,10 +676,10 @@ void XPlaneMobileServer::handle_client(std::uintptr_t client_socket) {
             if (found != command_results_.end()) result = *found;
         }
         if (!result) {
-            send_response(client, 200, "application/json", "{\"done\":false}", true);
+            send_response(*connection, 200, "application/json", "{\"done\":false}", true);
             return;
         }
-        send_response(client, 200, "application/json; charset=utf-8",
+        send_response(*connection, 200, "application/json; charset=utf-8",
                       "{\"done\":true,\"success\":" + std::string(result->success ? "true" : "false") +
                       ",\"message\":\"" + json_escape(result->message) + "\"}", true);
         return;
@@ -687,7 +688,7 @@ void XPlaneMobileServer::handle_client(std::uintptr_t client_socket) {
         const auto values = form_values(body);
         const auto action_value = values.find("action");
         if (action_value == values.end()) {
-            send_response(client, 400, "application/json", "{\"error\":\"action required\"}", true);
+            send_response(*connection, 400, "application/json", "{\"error\":\"action required\"}", true);
             return;
         }
         MobileCommand command;
@@ -697,7 +698,7 @@ void XPlaneMobileServer::handle_client(std::uintptr_t client_socket) {
             command.kind = CommandKind::apply_route;
             const auto route = values.find("route");
             if (route == values.end() || (command.route = parse_route(route->second)).size() < 2) {
-                send_response(client, 400, "application/json", "{\"error\":\"valid route required\"}", true);
+                send_response(*connection, 400, "application/json", "{\"error\":\"valid route required\"}", true);
                 return;
             }
         } else if (action_value->second == "search_airport") {
@@ -708,7 +709,7 @@ void XPlaneMobileServer::handle_client(std::uintptr_t client_socket) {
                 !std::all_of(command.airport.begin(), command.airport.end(), [](unsigned char value) {
                     return std::isalnum(value) != 0;
                 })) {
-                send_response(client, 400, "application/json", "{\"error\":\"valid airport required\"}", true);
+                send_response(*connection, 400, "application/json", "{\"error\":\"valid airport required\"}", true);
                 return;
             }
         } else if (action_value->second == "apply_approach") {
@@ -721,13 +722,13 @@ void XPlaneMobileServer::handle_client(std::uintptr_t client_socket) {
                 for (auto value : split(values.at("excluded"), ',')) if (!value.empty()) command.excluded_fixes.push_back(value);
             }
             if (command.airport.empty() || command.approach.empty()) {
-                send_response(client, 400, "application/json", "{\"error\":\"approach selection required\"}", true);
+                send_response(*connection, 400, "application/json", "{\"error\":\"approach selection required\"}", true);
                 return;
             }
         } else if (action_value->second == "refresh_library") {
             command.kind = CommandKind::refresh_library;
         } else {
-            send_response(client, 400, "application/json", "{\"error\":\"unknown action\"}", true);
+            send_response(*connection, 400, "application/json", "{\"error\":\"unknown action\"}", true);
             return;
         }
         {
@@ -735,30 +736,30 @@ void XPlaneMobileServer::handle_client(std::uintptr_t client_socket) {
             command.id = next_command_id_++;
             pending_commands_.push_back(command);
         }
-        send_response(client, 202, "application/json", "{\"commandId\":" + std::to_string(command.id) + "}", true);
+        send_response(*connection, 202, "application/json", "{\"commandId\":" + std::to_string(command.id) + "}", true);
         return;
     }
 
     if (method != "GET") {
-        send_response(client, 404, "text/plain", "Not found", true);
+        send_response(*connection, 404, "text/plain", "Not found", true);
         return;
     }
     std::string relative = target == "/" ? "index.html" : target.substr(1);
     const auto static_query = relative.find('?');
     if (static_query != std::string::npos) relative.resize(static_query);
     if (relative.find("..") != std::string::npos || relative.find('\\') != std::string::npos) {
-        send_response(client, 404, "text/plain", "Not found", true);
+        send_response(*connection, 404, "text/plain", "Not found", true);
         return;
     }
     const auto path = web_root_ / relative;
     const auto file_body = read_file(path);
     if (file_body.empty()) {
-        send_response(client, 404, "text/plain", "Not found", true);
+        send_response(*connection, 404, "text/plain", "Not found", true);
         return;
     }
     // Mobile assets change rapidly during simulator testing. Avoid Safari keeping
     // an older pairing script after the plugin folder is replaced.
-    send_response(client, 200, content_type(path), file_body, true);
+    send_response(*connection, 200, content_type(path), file_body, true);
 #else
     (void)client_socket;
 #endif
