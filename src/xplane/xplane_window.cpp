@@ -2493,7 +2493,7 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         draw_text(left, top, "About OpenEFB", text_primary, xplmFont_Proportional);
         draw_text(left, top - 28, "An open-source electronic flight bag for X-Plane 12.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Version", "OPEN EFB / 1.1 MOBILE 2.0 RC");
+                  "Version", "OPEN EFB / 1.1 MOBILE 2.0");
         draw_card(left, top - 178, card_right, top - 274,
                   "Release", "Mobile companion development preview");
         draw_card(left, top - 294, card_right, top - 390,
