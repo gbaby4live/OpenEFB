@@ -256,6 +256,8 @@ bool XPlaneMobileServer::start() {
     if (!tls_context_.initialize({})) {
         std::lock_guard lock(mutex_);
         status_.message = "Mobile HTTPS identity could not be initialized";
+        if (!tls_context_.error().empty())
+            status_.message += ": " + std::string(tls_context_.error());
         return false;
     }
     WSADATA winsock{};

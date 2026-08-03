@@ -23,7 +23,7 @@ namespace openefb::xplane {
 namespace {
 
 constexpr wchar_t identity_subject[] = L"CN=OpenEFB Local Bridge";
-constexpr wchar_t identity_container[] = L"OpenEFB Mobile TLS Identity";
+constexpr wchar_t identity_container[] = L"OpenEFB Mobile TLS Identity v2";
 
 bool socket_send_all(SOCKET socket, const char* data, std::size_t size) {
     std::size_t sent{};
@@ -36,15 +36,17 @@ bool socket_send_all(SOCKET socket, const char* data, std::size_t size) {
     return true;
 }
 
-CRYPT_KEY_PROV_INFO identity_key_info() {
+CRYPT_KEY_PROV_INFO identity_key_info(const std::wstring& container) {
     CRYPT_KEY_PROV_INFO info{};
-    info.pwszContainerName = const_cast<wchar_t*>(identity_container);
-    info.pwszProvName = const_cast<wchar_t*>(MS_KEY_STORAGE_PROVIDER);
-    info.dwKeySpec = CERT_NCRYPT_KEY_SPEC;
+    info.pwszContainerName = const_cast<wchar_t*>(container.c_str());
+    info.pwszProvName = const_cast<wchar_t*>(MS_ENH_RSA_AES_PROV_W);
+    info.dwProvType = PROV_RSA_AES;
+    info.dwKeySpec = AT_KEYEXCHANGE;
     return info;
 }
 
-PCCERT_CONTEXT load_identity(const std::filesystem::path& path) {
+PCCERT_CONTEXT load_identity(const std::filesystem::path& path,
+                             const std::wstring& container) {
     std::ifstream stream(path, std::ios::binary);
     if (!stream) return nullptr;
     const std::vector<unsigned char> encoded{std::istreambuf_iterator<char>(stream),
@@ -52,7 +54,7 @@ PCCERT_CONTEXT load_identity(const std::filesystem::path& path) {
     if (encoded.empty()) return nullptr;
     PCCERT_CONTEXT certificate = CertCreateCertificateContext(
         X509_ASN_ENCODING, encoded.data(), static_cast<DWORD>(encoded.size()));
-    auto key_info = identity_key_info();
+    auto key_info = identity_key_info(container);
     if (certificate && !CertSetCertificateContextProperty(
                            certificate, CERT_KEY_PROV_INFO_PROP_ID, 0, &key_info)) {
         CertFreeCertificateContext(certificate);
@@ -70,29 +72,30 @@ bool save_identity(const std::filesystem::path& path, PCCERT_CONTEXT certificate
     return static_cast<bool>(stream);
 }
 
-PCCERT_CONTEXT create_identity() {
-    NCRYPT_PROV_HANDLE provider{};
-    if (const auto result = NCryptOpenStorageProvider(&provider, MS_KEY_STORAGE_PROVIDER, 0);
-        result != ERROR_SUCCESS) {
-        std::fprintf(stderr, "OpenEFB TLS: NCryptOpenStorageProvider failed 0x%lx\n", result);
-        return nullptr;
+PCCERT_CONTEXT create_identity(const std::wstring& container, std::string& error) {
+    HCRYPTPROV provider{};
+    if (!CryptAcquireContextW(&provider, container.c_str(), MS_ENH_RSA_AES_PROV_W,
+                              PROV_RSA_AES, CRYPT_SILENT)) {
+        const DWORD open_error = GetLastError();
+        if (open_error != NTE_BAD_KEYSET ||
+            !CryptAcquireContextW(&provider, container.c_str(), MS_ENH_RSA_AES_PROV_W,
+                                  PROV_RSA_AES, CRYPT_NEWKEYSET | CRYPT_SILENT)) {
+            error = "Windows RSA key container could not be opened (" +
+                    std::to_string(GetLastError()) + ")";
+            return nullptr;
+        }
     }
 
-    NCRYPT_KEY_HANDLE key{};
-    SECURITY_STATUS status = NCryptOpenKey(provider, &key, identity_container, 0, NCRYPT_SILENT_FLAG);
-    const bool create_key = status != ERROR_SUCCESS;
-    if (create_key)
-        status = NCryptCreatePersistedKey(provider, &key, NCRYPT_RSA_ALGORITHM,
-                                          identity_container, 0, NCRYPT_SILENT_FLAG);
-    DWORD bits = 2048;
-    if (status == ERROR_SUCCESS && create_key)
-        status = NCryptSetProperty(key, NCRYPT_LENGTH_PROPERTY,
-                                  reinterpret_cast<PBYTE>(&bits), sizeof(bits), 0);
-    if (status == ERROR_SUCCESS && create_key) status = NCryptFinalizeKey(key, 0);
-    if (status != ERROR_SUCCESS) {
-        if (key) NCryptFreeObject(key);
-        NCryptFreeObject(provider);
-        return nullptr;
+    HCRYPTKEY key{};
+    if (!CryptGetUserKey(provider, AT_KEYEXCHANGE, &key)) {
+        const DWORD key_error = GetLastError();
+        if (key_error != NTE_NO_KEY ||
+            !CryptGenKey(provider, AT_KEYEXCHANGE, 2048U << 16U, &key)) {
+            error = "Windows RSA identity key could not be created (" +
+                    std::to_string(GetLastError()) + ")";
+            CryptReleaseContext(provider, 0);
+            return nullptr;
+        }
     }
 
     DWORD subject_size{};
@@ -102,13 +105,15 @@ PCCERT_CONTEXT create_identity() {
     if (!CertStrToNameW(X509_ASN_ENCODING, identity_subject, CERT_X500_NAME_STR,
                         nullptr, subject.data(), &subject_size, nullptr)) {
         std::fprintf(stderr, "OpenEFB TLS: CertStrToName failed %lu\n", GetLastError());
-        NCryptFreeObject(key);
-        NCryptFreeObject(provider);
+        error = "OpenEFB certificate name could not be encoded (" +
+                std::to_string(GetLastError()) + ")";
+        CryptDestroyKey(key);
+        CryptReleaseContext(provider, 0);
         return nullptr;
     }
 
     CERT_NAME_BLOB name{subject_size, subject.data()};
-    auto key_info = identity_key_info();
+    auto key_info = identity_key_info(container);
     CRYPT_ALGORITHM_IDENTIFIER signature{};
     signature.pszObjId = const_cast<char*>(szOID_RSA_SHA256RSA);
     SYSTEMTIME start{};
@@ -118,10 +123,13 @@ PCCERT_CONTEXT create_identity() {
     if (end.wMonth == 2 && end.wDay == 29) end.wDay = 28;
 
     PCCERT_CONTEXT created = CertCreateSelfSignCertificate(
-        key, &name, 0, &key_info, &signature, &start, &end, nullptr);
-    if (!created) std::fprintf(stderr, "OpenEFB TLS: CertCreateSelfSignCertificate failed %lu\n", GetLastError());
-    NCryptFreeObject(key);
-    NCryptFreeObject(provider);
+        provider, &name, 0, &key_info, &signature, &start, &end, nullptr);
+    if (!created) {
+        error = "OpenEFB certificate could not be created (" +
+                std::to_string(GetLastError()) + ")";
+    }
+    CryptDestroyKey(key);
+    CryptReleaseContext(provider, 0);
     return created;
 }
 
@@ -139,10 +147,14 @@ bool certificate_has_private_key(PCCERT_CONTEXT certificate) {
     DWORD key_spec{};
     BOOL release_key{};
     const bool available = CryptAcquireCertificatePrivateKey(
-        certificate, CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG | CRYPT_ACQUIRE_COMPARE_KEY_FLAG |
-                         CRYPT_ACQUIRE_SILENT_FLAG,
+        certificate, CRYPT_ACQUIRE_COMPARE_KEY_FLAG | CRYPT_ACQUIRE_SILENT_FLAG,
         nullptr, &private_key, &key_spec, &release_key) != FALSE;
-    if (available && release_key) NCryptFreeObject(private_key);
+    if (available && release_key) {
+        if (key_spec == CERT_NCRYPT_KEY_SPEC)
+            NCryptFreeObject(private_key);
+        else
+            CryptReleaseContext(static_cast<HCRYPTPROV>(private_key), 0);
+    }
     return available;
 }
 
@@ -176,6 +188,7 @@ struct WindowsTlsContext::Impl {
     bool credential_valid{};
     std::string fingerprint;
     std::string code;
+    std::string error;
 
     ~Impl() {
         if (credential_valid) FreeCredentialsHandle(&credentials);
@@ -269,6 +282,12 @@ bool WindowsTlsContext::initialize(const std::filesystem::path& certificate_path
                                    bool require_persistence) {
 #if IBM
     if (impl_->credential_valid) return true;
+    impl_->error.clear();
+    std::wstring container = identity_container;
+    if (!certificate_path.empty()) {
+        container += L" Test ";
+        container += std::to_wstring(GetCurrentProcessId());
+    }
     std::filesystem::path resolved_path = certificate_path;
     if (resolved_path.empty()) {
         std::array<wchar_t, 32768> local_data{};
@@ -277,13 +296,13 @@ bool WindowsTlsContext::initialize(const std::filesystem::path& certificate_path
         if (!length || length >= local_data.size()) return false;
         resolved_path = std::filesystem::path(local_data.data()) / "OpenEFB" / "mobile-identity.cer";
     }
-    impl_->certificate = load_identity(resolved_path);
+    impl_->certificate = load_identity(resolved_path, container);
     if (impl_->certificate && !certificate_has_private_key(impl_->certificate)) {
         CertFreeCertificateContext(impl_->certificate);
         impl_->certificate = nullptr;
     }
     if (!impl_->certificate) {
-        impl_->certificate = create_identity();
+        impl_->certificate = create_identity(container, impl_->error);
         if (impl_->certificate && !save_identity(resolved_path, impl_->certificate) &&
             require_persistence) {
             CertFreeCertificateContext(impl_->certificate);
@@ -291,6 +310,7 @@ bool WindowsTlsContext::initialize(const std::filesystem::path& certificate_path
         }
     }
     if (!impl_->certificate) {
+        if (impl_->error.empty()) impl_->error = "OpenEFB certificate is unavailable";
         std::fprintf(stderr, "OpenEFB TLS: certificate unavailable %lu\n", GetLastError());
         return false;
     }
@@ -302,6 +322,7 @@ bool WindowsTlsContext::initialize(const std::filesystem::path& certificate_path
     schannel.dwFlags = SCH_CRED_NO_DEFAULT_CREDS | SCH_USE_STRONG_CRYPTO;
     TimeStamp expiry{};
     if (!certificate_has_private_key(impl_->certificate)) {
+        impl_->error = "OpenEFB certificate private key is unavailable";
         std::fprintf(stderr, "OpenEFB TLS: certificate private key unavailable %lu\n", GetLastError());
         return false;
     }
@@ -309,11 +330,16 @@ bool WindowsTlsContext::initialize(const std::filesystem::path& certificate_path
                                                    SECPKG_CRED_INBOUND, nullptr, &schannel,
                                                    nullptr, nullptr, &impl_->credentials, &expiry);
     if (status != SEC_E_OK) {
+        impl_->error = "Windows HTTPS credentials could not be acquired (" +
+                       std::to_string(static_cast<unsigned long>(status)) + ")";
         std::fprintf(stderr, "OpenEFB TLS: AcquireCredentialsHandle failed 0x%lx\n", status);
         return false;
     }
     const auto hash = certificate_hash(impl_->certificate);
-    if (hash.empty()) std::fprintf(stderr, "OpenEFB TLS: SHA-256 certificate hash unavailable %lu\n", GetLastError());
+    if (hash.empty()) {
+        impl_->error = "OpenEFB certificate fingerprint is unavailable";
+        std::fprintf(stderr, "OpenEFB TLS: SHA-256 certificate hash unavailable %lu\n", GetLastError());
+    }
     impl_->fingerprint = hex_string(hash);
     impl_->code = make_verification_code(hash);
     impl_->credential_valid = !impl_->fingerprint.empty() && !impl_->code.empty();
@@ -344,6 +370,14 @@ std::string_view WindowsTlsContext::fingerprint() const noexcept {
 std::string_view WindowsTlsContext::verification_code() const noexcept {
 #if IBM
     return impl_->code;
+#else
+    return {};
+#endif
+}
+
+std::string_view WindowsTlsContext::error() const noexcept {
+#if IBM
+    return impl_->error;
 #else
     return {};
 #endif

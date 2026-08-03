@@ -44,6 +44,7 @@ public:
     [[nodiscard]] bool ready() const noexcept;
     [[nodiscard]] std::string_view fingerprint() const noexcept;
     [[nodiscard]] std::string_view verification_code() const noexcept;
+    [[nodiscard]] std::string_view error() const noexcept;
     [[nodiscard]] std::unique_ptr<WindowsTlsConnection> accept(std::uintptr_t socket) const;
 
 private:
