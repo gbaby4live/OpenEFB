@@ -27,7 +27,9 @@ std::vector<ChecklistItem> checklist_for(ChecklistPhase phase) {
 }
 }
 
-BriefingModel::BriefingModel() : checklist_(checklist_for(checklist_phase_)) {}
+BriefingModel::BriefingModel() {
+    checklist_ = checklist_for(checklist_phase_);
+}
 
 BriefingTab BriefingModel::active_tab() const noexcept { return active_tab_; }
 void BriefingModel::select_tab(BriefingTab tab) noexcept { active_tab_ = tab; }

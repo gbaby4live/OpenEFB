@@ -435,6 +435,9 @@ int main() {
     openefb::BriefingModel briefing_model;
     require(briefing_model.active_tab() == openefb::BriefingTab::summary,
             "briefing starts on the combined flight summary");
+    require(briefing_model.checklist_phase() == openefb::ChecklistPhase::preflight &&
+                !briefing_model.checklist().empty(),
+            "briefing starts with a populated preflight checklist");
     briefing_model.select_tab(openefb::BriefingTab::checklist);
     require(briefing_model.toggle_checklist_item(0) &&
                 briefing_model.completed_checklist_items() == 1,
