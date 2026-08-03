@@ -125,7 +125,7 @@ int page_content_height(EfbPage page) {
     case EfbPage::briefing: return 650;
     case EfbPage::logbook: return 570;
     case EfbPage::settings: return 1156;
-    case EfbPage::about: return 440;
+    case EfbPage::about: return 660;
     }
     return 0;
 }
@@ -2390,6 +2390,7 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
                        int selected_log_entry,
                        bool show_weather_forecast,
                        const DisplayPreferences& display_preferences,
+                       const MobileServerStatus& mobile_status,
                        int left, int top, int right, int bottom) {
     const int card_right = responsive_card_right(left, right);
     switch (page) {
@@ -2492,11 +2493,18 @@ void draw_page_content(EfbPage page, const TelemetrySnapshot& telemetry,
         draw_text(left, top, "About OpenEFB", text_primary, xplmFont_Proportional);
         draw_text(left, top - 28, "An open-source electronic flight bag for X-Plane 12.", text_muted);
         draw_card(left, top - 62, card_right, top - 158,
-                  "Version", "OPEN EFB / 1.0.0");
+                  "Version", "OPEN EFB / 1.1 MOBILE 2.0 RC");
         draw_card(left, top - 178, card_right, top - 274,
-                  "Release", "Stable desktop release for X-Plane 12");
+                  "Release", "Mobile companion development preview");
         draw_card(left, top - 294, card_right, top - 390,
                   "Project", "Built in the open for the flight-sim community");
+        draw_card(left, top - 410, card_right, top - 506,
+                  "Mobile companion",
+                  mobile_status.running ? shortened(mobile_status.url, 58) : mobile_status.message);
+        draw_card(left, top - 526, card_right, top - 622,
+                  "Mobile pairing code",
+                  mobile_status.running ? mobile_status.pairing_code + "  |  same Wi-Fi  |  read only"
+                                        : "Start OpenEFB to enable phone pairing");
         break;
     }
 }
@@ -2520,6 +2528,7 @@ std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, Telemetry
                                                     WeatherModel& weather_model,
                                                     FlightLogModel& flight_log_model,
                                                     TrafficModel& traffic_model,
+                                                    XPlaneMobileServer& mobile_server,
                                                     XPlanePreferences& preferences) {
     auto window = std::unique_ptr<XPlaneWindow>(
         new XPlaneWindow(ui_model, telemetry_model, flight_plan_model, flight_plan_editor,
@@ -2528,7 +2537,7 @@ std::unique_ptr<WindowSurface> XPlaneWindow::create(UiModel& ui_model, Telemetry
                          fuel_model, planning_model, briefing_model, briefing_library,
                          moving_map_model, navigation_database_model,
                          route_progress_model,
-                         weather_model, flight_log_model, traffic_model, preferences));
+                         weather_model, flight_log_model, traffic_model, mobile_server, preferences));
     if (!window->window_id_) {
         return nullptr;
     }
@@ -2552,6 +2561,7 @@ XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
                            WeatherModel& weather_model,
                            FlightLogModel& flight_log_model,
                            TrafficModel& traffic_model,
+                           XPlaneMobileServer& mobile_server,
                            XPlanePreferences& preferences)
     : ui_model_(ui_model), telemetry_model_(telemetry_model),
       flight_plan_model_(flight_plan_model), flight_plan_editor_(flight_plan_editor),
@@ -2565,6 +2575,7 @@ XPlaneWindow::XPlaneWindow(UiModel& ui_model, TelemetryModel& telemetry_model,
       weather_model_(weather_model),
       flight_log_model_(flight_log_model),
       traffic_model_(traffic_model),
+      mobile_server_(mobile_server),
       preferences_(preferences), map_tiles_(preferences.map_cache_directory()) {
     display_preferences_ = preferences_.load_display_preferences();
     traffic_model_.set_injection_requested(display_preferences_.inject_traffic);
@@ -2760,6 +2771,7 @@ void XPlaneWindow::render(XPLMWindowID window_id) const {
                       selected_log_entry_,
                       show_weather_forecast_,
                       display_preferences_,
+                      mobile_server_.status(),
                       content_left, scrolled_content_top, right, bottom);
     text_clip_left = saved_clip_left;
     text_clip_top = saved_clip_top;

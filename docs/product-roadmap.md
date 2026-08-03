@@ -136,3 +136,16 @@ original open-source code and visuals.
 Licensed chart products and proprietary Microsoft assets will not be copied.
 OpenEFB will use compatible public, user-provided, or separately licensed data
 sources while preserving the same practical pilot workflow.
+
+## Mobile companion roadmap
+
+- Mobile M1: same-Wi-Fi read-only pairing, responsive installable web app, live
+  telemetry, OSM moving map, route, traffic, progress, and endpoint weather
+- Mobile M2: delivered session-authenticated command channel, flight-plan draft
+  editing, revision conflict detection, and explicit Apply confirmation
+- Mobile M3: delivered approach/transition selection, removable procedure fixes,
+  chart and briefing streaming, reconnect handling, and cache-capable app shell
+- Mobile M4 source: SwiftUI/WKWebView iPhone and iPad wrapper, local-network usage
+  disclosure, privacy manifest, rotation, and preserved web session
+- Mobile M4 release blockers: pinned encrypted transport, macOS/Xcode compilation,
+  Apple signing, physical-device validation, App Store Connect, and TestFlight

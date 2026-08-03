@@ -12,6 +12,27 @@ points, simulator messages, and logging through `XPLMDebugString`.
 - Owned simulator resources are released during disable or stop.
 - Lifecycle transitions are explicit and safe to repeat where X-Plane may do so.
 
+## Mobile 2.0: paired flight deck
+
+- `XPlaneMobileServer` samples normalized model snapshots from an XPLM flight
+  loop on the simulator main thread. The network worker receives only an
+  immutable JSON copy and never calls XPLM or reads mutable core models.
+- A bounded Winsock HTTP server listens on port 8383 while the plugin is enabled
+  and closes before telemetry, traffic, route, or weather adapters stop.
+- Static mobile assets ship inside the plugin package. The browser client trades
+  the per-session six-digit pairing code for a random 256-bit session token and
+  polls versioned JSON endpoints while rendering its own OpenStreetMap canvas.
+- The network worker validates and queues bounded commands but never calls XPLM.
+  The simulator flight loop executes route, airport, procedure, and library
+  commands on the main thread and publishes asynchronous command results.
+- Route writes require the exact model revision used to create the phone draft.
+  A conflicting desktop or cockpit change is rejected instead of overwritten.
+- Library files are served only by an authenticated numeric entry selected from
+  the model-published allowlist; client paths and traversal strings are never
+  accepted as document locations.
+- Local HTTP is session-authenticated but not encrypted and is intended only for
+  a trusted private network. Pinned TLS remains mandatory before App Store release.
+
 The first implementation milestone is an in-simulator shell: a menu command,
 window ownership abstraction, XPLM window lifecycle, and blank EFB surface.
 

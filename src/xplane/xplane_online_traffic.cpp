@@ -296,7 +296,7 @@ DownloadResult download_aircraft(double latitude, double longitude, int radius_n
     swprintf_s(path, L"/v2/lat/%.5f/lon/%.5f/dist/%d",
         latitude, longitude, radius_nm);
     HINTERNET session = WinHttpOpen(
-        L"OpenEFB/1.0.0 (+https://github.com/Gbaby4live/OpenEFB)",
+        L"OpenEFB/1.1.0-mobile-2 (+https://github.com/Gbaby4live/OpenEFB)",
         WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) return {false, {}, "ADSB.LOL connection could not start"};
@@ -365,7 +365,7 @@ DownloadResult download_route(const std::string& callsign) {
     const std::string route_path = "/routes/" + callsign.substr(0, 2) + "/" + callsign + ".json";
     const std::wstring path(route_path.begin(), route_path.end());
     HINTERNET session = WinHttpOpen(
-        L"OpenEFB/1.0.0 (+https://github.com/Gbaby4live/OpenEFB)",
+        L"OpenEFB/1.1.0-mobile-2 (+https://github.com/Gbaby4live/OpenEFB)",
         WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) return {false, {}, "Route connection could not start"};

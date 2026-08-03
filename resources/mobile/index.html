@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#07131d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>OpenEFB Mobile</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="app.css?v=m2.0">
+</head>
+<body>
+  <div id="pairing" class="pairing">
+    <form id="pair-form" class="pair-card">
+      <div class="brand-mark">OE</div>
+      <p class="eyebrow">OPEN EFB MOBILE</p>
+      <h1>Pair with X-Plane</h1>
+      <p>Enter the six-digit code displayed on the OpenEFB About page.</p>
+      <input id="pair-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" aria-label="Pairing code">
+      <button id="connect-button" class="primary" type="submit">Connect to OpenEFB</button>
+      <p id="pair-error" class="error" role="alert"></p>
+    </form>
+  </div>
+
+  <main id="app" hidden>
+    <header class="topbar">
+      <div><p class="eyebrow">OPEN EFB</p><h1 id="page-title">Moving Map</h1></div>
+      <div id="connection" class="status"><span></span> LIVE</div>
+    </header>
+
+    <section id="page-map" class="page active">
+      <section class="map-card">
+        <canvas id="map"></canvas>
+        <div class="map-tools">
+          <button id="zoom-in" aria-label="Zoom in">+</button>
+          <button id="zoom-out" aria-label="Zoom out">-</button>
+          <button id="recenter" aria-label="Center aircraft">&#9678;</button>
+        </div>
+        <a class="attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>
+        <div class="aircraft-strip">
+          <strong id="aircraft">WAITING FOR X-PLANE</strong>
+          <span id="position">No live position</span>
+        </div>
+      </section>
+      <section class="metrics" aria-label="Flight data">
+        <article><span>ALTITUDE</span><strong id="altitude">--</strong><small>FT</small></article>
+        <article><span>GROUND SPEED</span><strong id="speed">--</strong><small>KT</small></article>
+        <article><span>HEADING</span><strong id="heading">--</strong><small>DEG</small></article>
+        <article><span>VERTICAL SPEED</span><strong id="vertical-speed">--</strong><small>FPM</small></article>
+      </section>
+      <section class="panel route-panel">
+        <div class="panel-heading"><div><p class="eyebrow">ACTIVE ROUTE</p><h2 id="route-title">No flight plan</h2></div><span id="route-distance">-- NM</span></div>
+        <div id="route" class="route"></div>
+      </section>
+    </section>
+
+    <section id="page-plan" class="page">
+      <section class="panel">
+        <div class="panel-heading"><div><p class="eyebrow">SYNCHRONIZED FLIGHT PLAN</p><h2 id="plan-title">Active X-Plane route</h2></div><button id="edit-route" class="secondary">Edit</button></div>
+        <p id="plan-revision" class="helper">Waiting for X-Plane</p>
+        <div id="draft-add" class="inline-form" hidden><input id="draft-waypoint" maxlength="16" placeholder="Add waypoint ID" aria-label="Waypoint identifier"><button id="add-waypoint" class="secondary">Add VIA</button></div>
+        <div id="draft-route" class="draft-route"></div>
+        <div id="draft-actions" class="action-row" hidden>
+          <button id="discard-route" class="secondary">Discard</button>
+          <button id="apply-route" class="primary">Apply to FMS</button>
+        </div>
+      </section>
+
+      <section class="panel approach-card">
+        <div class="panel-heading"><div><p class="eyebrow">PROCEDURES</p><h2>Approach selector</h2></div></div>
+        <div class="segmented"><button id="endpoint-dep">Departure</button><button id="endpoint-dest" class="selected">Destination</button></div>
+        <div class="inline-form"><input id="approach-airport" maxlength="7" placeholder="ICAO" aria-label="Approach airport"><button id="load-approaches" class="primary">Load</button></div>
+        <p id="approach-status" class="helper">Load an airport to see installed X-Plane procedures.</p>
+        <div id="approach-list" class="choice-list"></div>
+        <div id="approach-detail" hidden>
+          <label>Transition<select id="transition-list"></select></label>
+          <p class="eyebrow fix-heading">PROCEDURE LEGS - TAP TO EXCLUDE</p>
+          <div id="approach-fixes" class="fix-list"></div>
+          <button id="apply-approach" class="primary full">Apply approach to FMS</button>
+        </div>
+      </section>
+    </section>
+
+    <section id="page-weather" class="page">
+      <section class="weather-grid">
+        <article class="panel"><p class="eyebrow">DEPARTURE WEATHER</p><h2 id="dep-weather-title">--</h2><p id="dep-weather">No METAR available</p></article>
+        <article class="panel"><p class="eyebrow">DESTINATION WEATHER</p><h2 id="dest-weather-title">--</h2><p id="dest-weather">No METAR available</p></article>
+      </section>
+      <section class="panel"><p class="eyebrow">LIVE SOURCE POLICY</p><h2>Online first, simulator and cache fallback</h2><p class="helper">Reports synchronize from the desktop OpenEFB weather service. Keep X-Plane running to receive refreshed conditions.</p></section>
+    </section>
+
+    <section id="page-briefing" class="page">
+      <section class="panel">
+        <div class="panel-heading"><div><p class="eyebrow">FLIGHT LIBRARY</p><h2>Charts and briefings</h2></div><button id="refresh-library" class="secondary">Refresh</button></div>
+        <p id="library-status" class="helper">Synchronizing the desktop library.</p>
+        <div class="segmented"><button id="library-all" class="selected">All</button><button id="library-charts">Charts</button><button id="library-docs">Briefings</button></div>
+        <div id="library-list" class="library-list"></div>
+      </section>
+    </section>
+
+    <section id="page-settings" class="page">
+      <section class="panel settings-card">
+        <p class="eyebrow">CONNECTION</p><h2>Local flight deck</h2>
+        <dl><div><dt>Channel</dt><dd>Paired session</dd></div><div><dt>Data path</dt><dd>Same Wi-Fi</dd></div><div><dt>Commands</dt><dd>Explicit Apply only</dd></div></dl>
+        <p class="helper">Flight-plan changes are held as a draft and never reach the FMS until you confirm Apply.</p>
+        <button id="disconnect" class="danger full">Disconnect this phone</button>
+      </section>
+      <section class="panel"><p class="eyebrow">INSTALL</p><h2>Add to Home Screen</h2><p class="helper">In Safari, use Share, then Add to Home Screen. The live connection still requires X-Plane and the OpenEFB plugin on the same network.</p></section>
+    </section>
+
+    <footer>OpenEFB Mobile 2.0 - local simulator companion</footer>
+  </main>
+
+  <nav id="bottom-nav" class="bottom-nav" hidden aria-label="Mobile pages">
+    <button data-page="map" class="selected"><span>&#9992;</span>Map</button>
+    <button data-page="plan"><span>&#8644;</span>Plan</button>
+    <button data-page="weather"><span>&#9729;</span>Weather</button>
+    <button data-page="briefing"><span>&#9638;</span>Briefing</button>
+    <button data-page="settings"><span>&#9881;</span>Settings</button>
+  </nav>
+
+  <dialog id="document-viewer">
+    <header><strong id="document-title">Document</strong><button id="close-document">Close</button></header>
+    <iframe id="document-frame" title="OpenEFB document"></iframe>
+  </dialog>
+  <div id="toast" class="toast" hidden role="status"></div>
+  <script src="app.js?v=m2.0"></script>
+</body>
+</html>

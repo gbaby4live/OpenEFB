@@ -22,6 +22,7 @@
 #include "xplane_briefing_library.hpp"
 #include "xplane_fuel.hpp"
 #include "xplane_menu.hpp"
+#include "xplane_mobile_server.hpp"
 #include "xplane_navigation_database.hpp"
 #include "xplane_preferences.hpp"
 #include "xplane_planning.hpp"
@@ -37,11 +38,18 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <string_view>
 
 namespace {
+
+std::filesystem::path plugin_root_directory() {
+    char path[2048]{};
+    XPLMGetPluginInfo(XPLMGetMyID(), nullptr, path, nullptr, nullptr);
+    return std::filesystem::path(path).parent_path().parent_path();
+}
 
 struct PluginRuntime {
     PluginRuntime()
@@ -76,6 +84,10 @@ struct PluginRuntime {
                            preferences.briefing_library_directory()),
           weather(weather_model, flight_plan_model, preferences.weather_cache_directory()),
           navigation_database(navigation_database_model),
+          mobile_server(telemetry_model, flight_plan_model, route_progress_model,
+                        weather_model, traffic_model, airport_info_model, briefing_model,
+                        flight_plan, airport_data, briefing_library,
+                        plugin_root_directory() / "resources" / "mobile"),
           window_controller([this] {
               return openefb::xplane::XPlaneWindow::create(
                   ui_model, telemetry_model, flight_plan_model, flight_plan_editor, flight_plan,
@@ -84,7 +96,7 @@ struct PluginRuntime {
                   fuel_model, planning_model, briefing_model, briefing_library, moving_map_model,
                   navigation_database_model,
                   route_progress_model,
-                  weather_model, flight_log_model, traffic_model, preferences);
+                  weather_model, flight_log_model, traffic_model, mobile_server, preferences);
           }),
           menu([this] { toggle_window(); }) {
         briefing_model.set_notes(preferences.load_briefing_notes());
@@ -137,6 +149,7 @@ struct PluginRuntime {
     openefb::xplane::XPlaneBriefingLibrary briefing_library;
     openefb::xplane::XPlaneWeather weather;
     openefb::xplane::XPlaneNavigationDatabase navigation_database;
+    openefb::xplane::XPlaneMobileServer mobile_server;
     openefb::WindowController window_controller;
     openefb::xplane::XPlaneMenu menu;
 };
@@ -172,6 +185,7 @@ PLUGIN_API int XPluginStart(char* out_name, char* out_signature, char* out_descr
 
 PLUGIN_API void XPluginStop() {
     if (runtime) {
+        runtime->mobile_server.stop();
         runtime->briefing_library.stop();
         runtime->weather.stop();
         runtime->navigation_database.stop();
@@ -230,11 +244,18 @@ PLUGIN_API int XPluginEnable() {
     if (!runtime->briefing_library.start()) {
         PluginRuntime::xplane_log("airport archive unavailable");
     }
+    if (!runtime->mobile_server.start()) {
+        PluginRuntime::xplane_log("mobile companion unavailable");
+    } else {
+        const auto mobile = runtime->mobile_server.status();
+        PluginRuntime::xplane_log("mobile companion ready at " + mobile.url);
+    }
     return 1;
 }
 
 PLUGIN_API void XPluginDisable() {
     if (runtime) {
+        runtime->mobile_server.stop();
         runtime->briefing_library.stop();
         runtime->weather.stop();
         runtime->navigation_database.stop();
