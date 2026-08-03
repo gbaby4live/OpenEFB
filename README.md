@@ -339,3 +339,30 @@ draft clears the prior native approach layer and writes the complete revised
 sequence to X-Plane, so OpenEFB and the FMS cannot retain different copies. The
 former Cancel control is labeled `Flight Plan` and returns to an overview that
 always lists every route and approach leg with page scrolling.
+
+## Mobile companion 2.0
+
+OpenEFB can host a paired mobile flight deck on the X-Plane computer for an
+iPhone or other modern phone connected to the same trusted Wi-Fi network. Open
+the in-simulator About page to find the local URL and six-digit pairing code,
+then enter both in Safari. The responsive companion shows live aircraft
+telemetry, an OpenStreetMap moving map, the active magenta route, nearby traffic,
+route progress, and departure/destination METARs. Use Safari's **Add to Home
+Screen** action to launch it like an app.
+
+Mobile 2.0 adds a session-authenticated command channel. Route changes remain a
+phone-side draft until **Apply to FMS** is selected, and revision checks refuse
+to overwrite a route changed in X-Plane after editing began. The Plan page can
+add, remove, and reorder enroute fixes; browse installed departure or destination
+approaches and transitions; exclude optional procedure fixes; and explicitly
+apply the result to the simulator. Briefing streams the desktop OpenEFB chart and
+document library into an in-app PDF viewer. The shell reconnects after temporary
+network loss and includes installable-app cache metadata where the browser permits
+local HTTP service workers.
+
+The pairing exchange creates a random 256-bit session token and every command is
+accepted only on X-Plane's main thread. Local HTTP transport is authenticated but
+not encrypted; use it only on a trusted private network. The first Windows launch
+may require allowing X-Plane through Windows Firewall on private networks. A native
+SwiftUI iPhone/iPad shell is provided under `mobile/ios`; device signing and
+TestFlight require macOS, Xcode, and the maintainer's Apple Developer account.

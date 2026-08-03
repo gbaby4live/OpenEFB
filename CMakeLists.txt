@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(OpenEFB VERSION 1.0.0 LANGUAGES CXX)
+project(OpenEFB VERSION 1.1.0 LANGUAGES CXX)
 
 option(OPEN_EFB_BUILD_TESTS "Build OpenEFB unit tests" ON)
 set(OPEN_EFB_XPLANE_SDK_PATH "" CACHE PATH "Path to the X-Plane SDK root")
@@ -57,6 +57,7 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
         src/xplane/xplane_menu.cpp
         src/xplane/xplane_map_tiles.cpp
         src/xplane/xplane_map_pois.cpp
+        src/xplane/xplane_mobile_server.cpp
         src/xplane/xplane_navigation_database.cpp
         src/xplane/xplane_online_traffic.cpp
         src/xplane/xplane_pdf_viewer.cpp
@@ -84,14 +85,14 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
     if(WIN32)
         set(OPEN_EFB_PLUGIN_NAME win)
         target_compile_definitions(openefb_plugin PRIVATE
-            IBM=1 NOMINMAX=1
+            IBM=1 NOMINMAX=1 WIN32_LEAN_AND_MEAN=1
             XPLM200=1 XPLM210=1 XPLM300=1 XPLM301=1 XPLM303=1 XPLM400=1 XPLM410=1
         )
         target_link_directories(openefb_plugin PRIVATE
             "${OPEN_EFB_XPLANE_SDK_PATH}/Libraries/Win"
         )
         target_link_libraries(openefb_plugin PRIVATE XPLM_64)
-        target_link_libraries(openefb_plugin PRIVATE opengl32 windowscodecs winhttp shell32 windowsapp)
+        target_link_libraries(openefb_plugin PRIVATE opengl32 windowscodecs winhttp shell32 windowsapp ws2_32)
     elseif(APPLE)
         set(OPEN_EFB_PLUGIN_NAME mac)
         target_compile_definitions(openefb_plugin PRIVATE
@@ -131,6 +132,9 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
             "${CMAKE_SOURCE_DIR}/resources/traffic/generic_aircraft.obj"
             "${CMAKE_BINARY_DIR}/OpenEFB/resources/traffic/generic_aircraft.obj"
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory
+            "${CMAKE_SOURCE_DIR}/resources/mobile"
+            "${CMAKE_BINARY_DIR}/OpenEFB/resources/mobile"
         VERBATIM
     )
 
@@ -141,13 +145,14 @@ if(OPEN_EFB_XPLANE_SDK_PATH)
     install(FILES README.md LICENSE DESTINATION OpenEFB)
     install(FILES resources/traffic/generic_aircraft.obj
             DESTINATION OpenEFB/resources/traffic)
+    install(DIRECTORY resources/mobile DESTINATION OpenEFB/resources)
 else()
     message(STATUS "OPEN_EFB_XPLANE_SDK_PATH is not set; skipping the .xpl target")
 endif()
 
 set(CPACK_PACKAGE_NAME "OpenEFB")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
-set(CPACK_PACKAGE_FILE_NAME "OpenEFB-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}")
+set(CPACK_PACKAGE_FILE_NAME "OpenEFB-${PROJECT_VERSION}-Mobile-2.0-RC-${CMAKE_SYSTEM_NAME}")
 set(CPACK_GENERATOR "ZIP")
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 include(CPack)

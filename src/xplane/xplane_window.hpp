@@ -19,6 +19,7 @@
 #include "xplane_preferences.hpp"
 #include "xplane_map_tiles.hpp"
 #include "xplane_map_pois.hpp"
+#include "xplane_mobile_server.hpp"
 #include "xplane_pdf_viewer.hpp"
 #include "xplane_flight_plan.hpp"
 #include "xplane_airport_data.hpp"
@@ -81,6 +82,7 @@ public:
                                                  WeatherModel& weather_model,
                                                  FlightLogModel& flight_log_model,
                                                  TrafficModel& traffic_model,
+                                                 XPlaneMobileServer& mobile_server,
                                                  XPlanePreferences& preferences);
 
     ~XPlaneWindow() override;
@@ -115,6 +117,7 @@ private:
                  WeatherModel& weather_model,
                  FlightLogModel& flight_log_model,
                  TrafficModel& traffic_model,
+                 XPlaneMobileServer& mobile_server,
                  XPlanePreferences& preferences);
 
     void render(XPLMWindowID window_id) const;
@@ -168,6 +171,7 @@ private:
     WeatherModel& weather_model_;
     FlightLogModel& flight_log_model_;
     TrafficModel& traffic_model_;
+    XPlaneMobileServer& mobile_server_;
     XPlanePreferences& preferences_;
     mutable XPlaneMapTiles map_tiles_;
     mutable XPlaneMapPois map_pois_;

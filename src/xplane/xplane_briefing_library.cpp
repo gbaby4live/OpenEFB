@@ -188,7 +188,7 @@ struct FaaDownload {
 };
 
 FaaDownload download_faa_file(const std::wstring& path, std::size_t maximum_size) {
-    HINTERNET session = WinHttpOpen(L"OpenEFB/1.0.0 (+https://github.com/Gbaby4live/OpenEFB)",
+    HINTERNET session = WinHttpOpen(L"OpenEFB/1.1.0-mobile-2 (+https://github.com/Gbaby4live/OpenEFB)",
                                     WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) return {{}, "WinHTTP session error " + std::to_string(GetLastError())};

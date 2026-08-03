@@ -1,0 +1,11 @@
+{
+  "name": "OpenEFB Mobile Flight Deck",
+  "short_name": "OpenEFB",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "description": "Paired flight planning, charts, weather, traffic, and moving map for OpenEFB and X-Plane 12.",
+  "background_color": "#061019",
+  "theme_color": "#07131d",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
