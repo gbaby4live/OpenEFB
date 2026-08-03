@@ -366,3 +366,10 @@ not encrypted; use it only on a trusted private network. The first Windows launc
 may require allowing X-Plane through Windows Firewall on private networks. A native
 SwiftUI iPhone/iPad shell is provided under `mobile/ios`; device signing and
 TestFlight require macOS, Xcode, and the maintainer's Apple Developer account.
+The native shell restricts connections to private/local hosts, retains the
+paired WebKit session across backgrounding, rechecks the simulator when returning
+to the foreground, and prevents the embedded browser from navigating to an
+unrelated origin. GitHub's macOS workflow generates the Xcode project and compiles
+the app and its address-validation tests for the iOS Simulator. See
+`docs/ios-release-checklist.md` for the remaining encrypted-transport and signing
+gates.

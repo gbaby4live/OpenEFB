@@ -9,7 +9,7 @@
   <key>NSLocalNetworkUsageDescription</key><string>OpenEFB connects directly to your X-Plane computer to display flight data and apply flight plans you confirm.</string>
   <key>NSAppTransportSecurity</key>
   <dict>
-    <key>NSAllowsArbitraryLoads</key><true/>
+    <key>NSAllowsArbitraryLoadsInWebContent</key><true/>
   </dict>
   <key>UISupportedInterfaceOrientations</key>
   <array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>

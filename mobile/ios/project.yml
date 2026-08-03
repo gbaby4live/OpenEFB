@@ -20,3 +20,14 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: org.openefb.mobile
         PRODUCT_NAME: OpenEFB Mobile
         CODE_SIGN_STYLE: Automatic
+  OpenEFBMobileTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - OpenEFBMobileTests
+    dependencies:
+      - target: OpenEFBMobile
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.openefb.mobile.tests
+        GENERATE_INFOPLIST_FILE: YES

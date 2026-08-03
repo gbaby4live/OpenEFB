@@ -71,3 +71,8 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# Generated Apple project and local Xcode state
+mobile/ios/*.xcodeproj/
+**/xcuserdata/
+DerivedData/

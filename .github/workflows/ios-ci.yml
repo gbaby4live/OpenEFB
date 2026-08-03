@@ -1,0 +1,37 @@
+name: iOS native shell
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/ios/**"
+      - ".github/workflows/ios-ci.yml"
+  pull_request:
+    paths:
+      - "mobile/ios/**"
+      - ".github/workflows/ios-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: mobile/ios
+        run: xcodegen generate
+      - name: Compile app and tests for iOS Simulator
+        working-directory: mobile/ios
+        run: >-
+          xcodebuild
+          -project OpenEFBMobile.xcodeproj
+          -scheme OpenEFBMobile
+          -sdk iphonesimulator
+          -destination 'generic/platform=iOS Simulator'
+          build-for-testing
+          CODE_SIGNING_ALLOWED=NO
